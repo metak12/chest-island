@@ -65,12 +65,60 @@ function Get-OverlayPosition([Drawing.Rectangle]$screen, [Drawing.Size]$size) {
     [Drawing.Point]::new(($screen.Left + $x), ($screen.Top + $y))
 }
 
-function Format-OverlayCount([string]$value) {
-    $goalPath = Join-Path $env:APPDATA 'FortniteChestCounter/goal.txt'
-    $goal = 0
-    try { [void][int]::TryParse([IO.File]::ReadAllText($goalPath),[ref]$goal) }
-    catch [IO.IOException] {}
-    if ($goal -gt 0) { return "$value / $goal" }
+$overlayData = Join-Path $env:APPDATA 'FortniteChestCounter'
+$overlaySettingsPath = Join-Path $overlayData 'overlay-settings.txt'
+$historyPath = Join-Path $overlayData 'live-total.txt.history'
+$todayCache = @{ Key = ''; Count = 0 }
+$display = @{ AppliedSize = -1 }
+
+function Get-OverlaySettings {
+    $size = 1
+    $opacity = 89
+    $mode = 'goal'
+    try {
+        if ([IO.File]::ReadAllText($overlaySettingsPath).Trim() -match '^([0-2]),(\d{2,3}),(total|goal|today)$') {
+            $size = [int]$Matches[1]
+            $opacity = [Math]::Max(30, [Math]::Min(100, [int]$Matches[2]))
+            $mode = $Matches[3]
+        }
+    } catch [IO.IOException] {}
+    return @{
+        Width = @(172,218,280)[$size]; Height = @(32,42,54)[$size]
+        Font = @(12,15,19)[$size]; Size = $size; Opacity = $opacity; Mode = $mode
+    }
+}
+
+function Get-TodayCount {
+    $day = [DateTime]::Today.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)
+    try {
+        $info = [IO.FileInfo]::new($historyPath)
+        if (!$info.Exists) { return 0 }
+        $key = "$day/$($info.Length)/$($info.LastWriteTimeUtc.Ticks)"
+        if ($todayCache.Key -ne $key) {
+            $count = 0
+            $stream = [IO.File]::Open($historyPath,'Open','Read',([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+            $reader = [IO.StreamReader]::new($stream)
+            try {
+                while ($null -ne ($line = $reader.ReadLine())) {
+                    if ($line -ceq $day) { $count++ }
+                }
+                $todayCache.Key = $key
+                $todayCache.Count = $count
+            } finally { $reader.Dispose() }
+        }
+    } catch [IO.IOException] {}
+    return $todayCache.Count
+}
+
+function Format-OverlayCount([string]$value, [string]$mode) {
+    if ($mode -eq 'today') { return "Сегодня: $(Get-TodayCount)" }
+    if ($mode -eq 'goal') {
+        $goalPath = Join-Path $overlayData 'goal.txt'
+        $goal = 0
+        try { [void][int]::TryParse([IO.File]::ReadAllText($goalPath),[ref]$goal) }
+        catch [IO.IOException] {}
+        if ($goal -gt 0) { return "$value / $goal" }
+    }
     return "Сундуки: $value"
 }
 
@@ -82,35 +130,36 @@ if ($Move) {
         $editor.KeyPreview = $true
         $editor.StartPosition = 'Manual'
         $editor.FormBorderStyle = 'None'
-        $editor.ClientSize = [Drawing.Size]::new(218, 72)
+        $settings = Get-OverlaySettings
+        $editor.ClientSize = [Drawing.Size]::new($settings.Width, ($settings.Height + 30))
         $editor.BackColor = [Drawing.Color]::FromArgb(31, 25, 47)
         $game = Get-Process FortniteClient-Win64-Shipping -ErrorAction SilentlyContinue |
             Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
         $target = [Windows.Forms.Screen]::FromPoint([Windows.Forms.Cursor]::Position)
         if ($game) { $target = [Windows.Forms.Screen]::FromHandle($game.MainWindowHandle) }
-        $editor.Location = Get-OverlayPosition $target.Bounds ([Drawing.Size]::new(218,42))
+        $editor.Location = Get-OverlayPosition $target.Bounds ([Drawing.Size]::new($settings.Width,$settings.Height))
         $data = Join-Path $env:APPDATA 'FortniteChestCounter/live-total.txt'
         $value = '0'
         if ([IO.File]::Exists($data)) { $value = [IO.File]::ReadAllText($data).Trim() }
 
         $preview = [Windows.Forms.Label]::new()
-        $preview.Bounds = [Drawing.Rectangle]::new(0,0,218,42)
+        $preview.Bounds = [Drawing.Rectangle]::new(0,0,$settings.Width,$settings.Height)
         $preview.TextAlign = 'MiddleCenter'
-        $preview.Text = "⠿   " + (Format-OverlayCount $value)
+        $preview.Text = "⠿   " + (Format-OverlayCount $value $settings.Mode)
         $preview.ForeColor = [Drawing.Color]::White
-        $preview.Font = [Drawing.Font]::new('Segoe UI Semibold', 14)
+        $preview.Font = [Drawing.Font]::new('Segoe UI Semibold', [single]$settings.Font)
         $preview.Cursor = [Windows.Forms.Cursors]::SizeAll
         $editor.Controls.Add($preview)
 
         $done = [Windows.Forms.Button]::new()
         $done.Text = 'Готово'
-        $done.Bounds = [Drawing.Rectangle]::new(112,43,99,24)
+        $done.Bounds = [Drawing.Rectangle]::new([int]($settings.Width/2+3),($settings.Height+1),[int]($settings.Width/2-10),24)
         $done.FlatStyle = 'Flat'
         $done.ForeColor = [Drawing.Color]::White
         $editor.Controls.Add($done)
         $cancel = [Windows.Forms.Button]::new()
         $cancel.Text = 'Отмена'
-        $cancel.Bounds = [Drawing.Rectangle]::new(7,43,99,24)
+        $cancel.Bounds = [Drawing.Rectangle]::new(7,($settings.Height+1),[int]($settings.Width/2-10),24)
         $cancel.FlatStyle = 'Flat'
         $cancel.ForeColor = [Drawing.Color]::White
         $editor.Controls.Add($cancel)
@@ -148,7 +197,7 @@ if (!$created) {
 
 $form = [ChestOverlay]::new()
 $timer = [Windows.Forms.Timer]::new()
-$font = [Drawing.Font]::new('Segoe UI Semibold', 15)
+$display.Font = [Drawing.Font]::new('Segoe UI Semibold', 15)
 try {
     $form.Text = 'Сундуки Fortnite'
     $form.TopMost = $true
@@ -162,7 +211,7 @@ try {
     $label = [Windows.Forms.Label]::new()
     $label.Dock = 'Fill'
     $label.TextAlign = 'MiddleCenter'
-    $label.Font = $font
+    $label.Font = $display.Font
     $label.ForeColor = [Drawing.Color]::White
     $label.Text = 'Сундуки: —'
     $form.Controls.Add($label)
@@ -178,9 +227,20 @@ try {
             Select-Object -First 1
         if (!$game) { $form.Hide(); return }
 
+        $settings = Get-OverlaySettings
+        if ($display.AppliedSize -ne $settings.Size) {
+            $form.ClientSize = [Drawing.Size]::new($settings.Width, $settings.Height)
+            $oldFont = $display.Font
+            $display.Font = [Drawing.Font]::new('Segoe UI Semibold', [single]$settings.Font)
+            $label.Font = $display.Font
+            $oldFont.Dispose()
+            $display.AppliedSize = $settings.Size
+        }
+        $form.Opacity = $settings.Opacity / 100
         try {
-            $value = [IO.File]::ReadAllText($totalPath).Trim()
-            if ($value -match '^\d+$') { $label.Text = Format-OverlayCount $value }
+            $value = '0'
+            if ([IO.File]::Exists($totalPath)) { $value = [IO.File]::ReadAllText($totalPath).Trim() }
+            if ($value -match '^\d+$') { $label.Text = Format-OverlayCount $value $settings.Mode }
         }
         catch [IO.IOException] {
             # Keep showing the last count while the counter updates the file.
@@ -197,7 +257,7 @@ try {
 finally {
     $timer.Dispose()
     $form.Dispose()
-    $font.Dispose()
+    $display.Font.Dispose()
     $instance.ReleaseMutex()
     $instance.Dispose()
 }

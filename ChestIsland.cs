@@ -12,7 +12,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
-internal sealed class ChestIsland
+internal sealed partial class ChestIsland
 {
     private readonly string folder = AppDomain.CurrentDomain.BaseDirectory;
     private readonly string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FortniteChestCounter");
@@ -25,18 +25,22 @@ internal sealed class ChestIsland
     private ReleaseUpdate update;
 
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
         bool first;
         using (var instance = new Mutex(true, @"Local\ChestIslandDashboard", out first))
         {
-            if (!first) { MessageBox.Show("Chest Island уже открыт.", "Chest Island"); return; }
-            try { new Application().Run(new ChestIsland().window); }
+            if (!first)
+            {
+                SignalOpenWindow();
+                return;
+            }
+            try { new Application().Run(new ChestIsland(Array.IndexOf(args, "--tray") >= 0).window); }
             catch (Exception ex) { MessageBox.Show(ex.Message, "Chest Island", MessageBoxButton.OK, MessageBoxImage.Error); }
         }
     }
 
-    private ChestIsland()
+    private ChestIsland(bool startInTray)
     {
         using (var layout = File.OpenRead(Path.Combine(folder, "ChestIsland.xaml")))
             window = (Window)XamlReader.Load(layout);
@@ -45,6 +49,7 @@ internal sealed class ChestIsland
                 icon.Handle, Int32Rect.Empty, System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
         Find<Button>("LiveToggle").Click += (s, e) => Toggle("Live.ps1", IsLive);
         Find<Button>("OverlayToggle").Click += (s, e) => Toggle("Overlay.ps1", IsOverlay);
+        InitializeSettings(startInTray);
         goal = ReadGoal();
         Find<Button>("EditCount").Click += (s, e) => EditCount(false);
         Find<Button>("EditGoal").Click += (s, e) => EditCount(true);
@@ -55,12 +60,14 @@ internal sealed class ChestIsland
         timer.Tick += (s, e) => Refresh();
         window.Loaded += (s, e) =>
         {
-            if (SystemParameters.ClientAreaAnimation)
+            if (startInTray && autoStart) window.Hide();
+            window.Opacity = 1;
+            if (window.IsVisible && SystemParameters.ClientAreaAnimation)
                 Find<Grid>("Dashboard").BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(280)));
             timer.Start();
             CheckForUpdates(false);
         };
-        window.Closed += (s, e) => timer.Stop();
+        window.Closed += (s, e) => { timer.Stop(); DisposeSettings(); };
         Refresh();
     }
 
@@ -89,6 +96,7 @@ internal sealed class ChestIsland
         var game = Process.GetProcessesByName("FortniteClient-Win64-Shipping");
         Find<TextBlock>("Game").Text = game.Length > 0 ? "●  Fortnite открыт" : "○  Fortnite закрыт";
         foreach (var process in game) process.Dispose();
+        SyncAuto(game.Length > 0, live, overlay);
         Find<TextBlock>("LiveStatus").Text = live ? "Включено" : "Остановлено";
         Find<TextBlock>("OverlayStatus").Text = overlay ? "Включён · виден в Fortnite" : "Скрыт";
         Find<Button>("LiveToggle").Content = live ? "Остановить" : "Запустить";
@@ -174,6 +182,7 @@ internal sealed class ChestIsland
             var selected = update;
             string path = await System.Threading.Tasks.Task.Run(() => selected.Download());
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            exiting = true;
             window.Close();
         }
         catch (Exception ex) { Say("Не удалось запустить обновление. " + ex.Message); }
