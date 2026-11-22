@@ -41,8 +41,10 @@ internal static class Setup
     private static void ShowInstaller(string directory, string app)
     {
         Application.EnableVisualStyles();
+        using (var icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath))
         using (var form = new Form())
         {
+            form.Icon = icon;
             form.Text = "Chest Island · Установка";
             form.ClientSize = new Size(540, 345);
             form.StartPosition = FormStartPosition.CenterScreen;
@@ -58,8 +60,11 @@ internal static class Setup
                     Color.FromArgb(73, 44, 107), Color.FromArgb(36, 29, 59), 22f))
                     args.Graphics.FillRectangle(gradient, hero.ClientRectangle);
             };
-            hero.Controls.Add(Label("Chest Island", 28, 22, 430, 59, 34));
-            hero.Controls.Add(Label("Счётчик сундуков Fortnite", 32, 84, 430, 28, 13));
+            if (icon != null) {
+                    hero.Paint += (sender, args) => args.Graphics.DrawIcon(icon, new Rectangle(24, 37, 48, 48));
+            }
+            hero.Controls.Add(Label("Chest Island", 86, 22, 390, 59, 34));
+            hero.Controls.Add(Label("Счётчик сундуков Fortnite", 91, 84, 380, 28, 13));
             form.Controls.Add(hero);
             form.Controls.Add(Label("Установка для текущего пользователя", 22, 183, 490, 29, 13));
             var status = Label("Появятся ярлыки на рабочем столе и в меню «Пуск».", 22, 218, 490, 38, 10);

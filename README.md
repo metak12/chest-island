@@ -1,5 +1,7 @@
 # Chest Island
 
+<img src="assets/ChestIsland.svg" width="96" alt="Chest Island">
+
 Счётчик сундуков Fortnite для Windows с игровым оверлеем.
 
 [Скачать установщик](https://github.com/metak12/chest-island/releases/latest/download/Chest-Island-Setup.exe)
@@ -14,3 +16,5 @@
 Приложение проверяет GitHub Releases при запуске. Когда доступна новая версия, кнопка «Обновить» скачивает установщик и проверяет SHA-256 по данным GitHub. Установка начинается после подтверждения в установщике.
 
 Для локальной сборки запусти `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build.ps1`. Установщик будет в `dist`. Приложение использует Windows OCR с русским языковым пакетом. Счёт и позиция хранятся в `%APPDATA%\FortniteChestCounter`.
+
+Подпись Authenticode доступна при сборке с параметрами "-SigningThumbprint <отпечаток> -SignToolPath <путь к SignTool>". Нужен доверенный сертификат подписи кода в хранилище текущего пользователя.

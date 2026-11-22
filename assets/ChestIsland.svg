@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Chest Island">
+  <defs>
+    <linearGradient id="tile" x2="1" y2="1"><stop stop-color="#342451"/><stop offset="1" stop-color="#171526"/></linearGradient>
+    <linearGradient id="chest" x2="1" y2="1"><stop stop-color="#f5deff"/><stop offset="1" stop-color="#ae83f5"/></linearGradient>
+  </defs>
+  <rect x="5" y="5" width="246" height="246" rx="58" fill="url(#tile)" stroke="#675086" stroke-width="4"/>
+  <path d="M40 185 Q128 225 216 185" fill="none" stroke="#a682ee" stroke-width="8" stroke-linecap="round" opacity=".72"/>
+  <path d="M54 120c0-25 18-46 43-46h62c25 0 43 21 43 46v49a13 13 0 0 1-13 13H67a13 13 0 0 1-13-13z" fill="url(#chest)"/>
+  <path d="M54 127h148" stroke="#352451" stroke-width="10"/>
+  <rect x="111" y="113" width="34" height="36" rx="9" fill="#352451"/>
+  <path d="M128 120l10 11-10 11-10-11z" fill="#f9e3a7"/>
+  <path d="M189 45q4 15 19 19-15 4-19 19-4-15-19-19 15-4 19-19z" fill="#f9e3a7"/>
+</svg>

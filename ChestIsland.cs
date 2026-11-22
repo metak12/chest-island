@@ -39,6 +39,9 @@ internal sealed class ChestIsland
     {
         using (var layout = File.OpenRead(Path.Combine(folder, "ChestIsland.xaml")))
             window = (Window)XamlReader.Load(layout);
+        using (var icon = System.Drawing.Icon.ExtractAssociatedIcon(Process.GetCurrentProcess().MainModule.FileName))
+            if (icon != null) window.Icon = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                icon.Handle, Int32Rect.Empty, System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
         Find<Button>("LiveToggle").Click += (s, e) => Toggle("Live.ps1", IsLive);
         Find<Button>("OverlayToggle").Click += (s, e) => Toggle("Overlay.ps1", IsOverlay);
         Find<Button>("EditCount").Click += (s, e) => EditCount();
