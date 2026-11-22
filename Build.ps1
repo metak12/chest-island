@@ -23,7 +23,7 @@ try {
     if ($LASTEXITCODE) { throw 'Chest Island compilation failed.' }
     Sign-Executable $app
     $setup = Join-Path $OutputDirectory 'Chest-Island-Setup.exe'
-    & $csc /nologo /target:winexe /optimize+ /win32icon:assets\ChestIsland.ico "/out:$setup" "/resource:$app,Chest Island.exe" '/resource:ChestIsland.xaml,ChestIsland.xaml' '/resource:Live.ps1,Live.ps1' '/resource:Overlay.ps1,Overlay.ps1' /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:Microsoft.CSharp.dll .\Setup.cs
+    & $csc /nologo /target:winexe /optimize+ /win32icon:assets\ChestIsland.ico "/out:$setup" "/resource:$app,Chest Island.exe" '/resource:ChestIsland.xaml,ChestIsland.xaml' '/resource:Live.ps1,Live.ps1' '/resource:Overlay.ps1,Overlay.ps1' '/resource:Calibration.ps1,Calibration.ps1' /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:Microsoft.CSharp.dll .\Setup.cs
     if ($LASTEXITCODE) { throw 'Installer compilation failed.' }
     Sign-Executable $setup
     Get-Item $setup

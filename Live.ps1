@@ -34,7 +34,9 @@ $ocr = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage([Windows.Globalizati
 if ($null -eq $ocr) { throw 'Windows OCR должен поддерживать русский язык.' }
 
 function Read-Reward([Drawing.Bitmap]$frame) {
-    $scaled = [Drawing.Bitmap]::new($frame.Width * 3, $frame.Height * 3)
+    $maximum = [Windows.Media.Ocr.OcrEngine]::MaxImageDimension
+    $scale = [Math]::Min(3,[Math]::Min($maximum/[double]$frame.Width,$maximum/[double]$frame.Height))
+    $scaled = [Drawing.Bitmap]::new([int][Math]::Floor($frame.Width*$scale),[int][Math]::Floor($frame.Height*$scale))
     $canvas = [Drawing.Graphics]::FromImage($scaled)
     $memory = [IO.MemoryStream]::new()
     $stream = $null
@@ -56,6 +58,57 @@ function Read-Reward([Drawing.Bitmap]$frame) {
         $canvas.Dispose()
         $scaled.Dispose()
     }
+}
+
+function Read-HudArea($rect, [double[]]$area) {
+    $width = $rect.Right - $rect.Left
+    $height = $rect.Bottom - $rect.Top
+    if ($width -le 0 -or $height -le 0) { return }
+    $x = $rect.Left + [int]($width * $area[0])
+    $y = $rect.Top + [int]($height * $area[1])
+    $frame = [Drawing.Bitmap]::new([Math]::Max(1,[int]($width*$area[2])),[Math]::Max(1,[int]($height*$area[3])))
+    $canvas = [Drawing.Graphics]::FromImage($frame)
+    try {
+        $canvas.CopyFromScreen($x, $y, 0, 0, $frame.Size)
+        return Read-Reward $frame
+    } finally { $canvas.Dispose(); $frame.Dispose() }
+}
+
+function Get-RewardArea([string]$file) {
+    $default = [double[]]@(.60,.24,.19,.18)
+    try {
+        $parts = [IO.File]::ReadAllText($file).Trim().Split(',')
+        if ($parts.Length -ne 4) { return $default }
+        $area = [double[]]@(0,0,0,0)
+        for ($i=0;$i -lt 4;$i++) {
+            $value = 0.0
+            if (![double]::TryParse($parts[$i],[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$value) -or
+                [double]::IsNaN($value) -or $value -lt 0 -or $value -gt 1) { return $default }
+            $area[$i] = $value
+        }
+        if ($area[2] -lt .008 -or $area[3] -lt .008 -or $area[0]+$area[2] -gt 1.00001 -or $area[1]+$area[3] -gt 1.00001) {
+            return $default
+        }
+        return $area
+    } catch [IO.IOException] { return $default }
+}
+
+function Has-SpectatorText([string]$text) {
+    return (($text -replace '\s+',' ') -match '(?i)(?:\bВЫ НАБЛЮДАЕТЕ\b|\bНАБЛЮДЕНИЕ\s*(?::|ЗА\b|$)|\bSPECTATING\b)')
+}
+
+function Test-SpectatorHud($rect) {
+    $top = Read-HudArea $rect @(0.27,0.025,0.46,0.14)
+    if (Has-SpectatorText $top.Text) { return $true }
+    $bottom = Read-HudArea $rect @(0.28,0.75,0.44,0.22)
+    return (Has-SpectatorText $bottom.Text)
+}
+
+function Set-SpectatorMarker([string]$path, [bool]$active) {
+    try {
+        if ($active) { [IO.File]::WriteAllText($path, 'paused') }
+        else { [IO.File]::Delete($path) }
+    } catch [IO.IOException] {}
 }
 
 function Has-ChestReward($result) {
@@ -182,6 +235,8 @@ function Update-Count([bool]$increment, [hashtable]$session) {
 }
 
 $session = $null
+$spectatorFile = "$OutputPath.spectator"
+Set-SpectatorMarker $spectatorFile $false
 try {
     $total = Update-Count $false
     Write-Host "Всего сундуков: $total"
@@ -190,11 +245,20 @@ try {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $lastSeen = -1000
     $lastDiagnosticText = $null
+    $spectating = $false
+    $clearSamples = 0
+    $lastSpectatorCheck = -1500
     $game = $null
     while ($true) {
         if (!$game -or $game.HasExited) {
             if ($session) { Save-GameSession $session; $session = $null }
-            if ($game) { $game.Dispose() }
+            if ($game) {
+                $game.Dispose()
+                $spectating = $false
+                $clearSamples = 0
+                $lastSpectatorCheck = -1500
+                Set-SpectatorMarker $spectatorFile $false
+            }
             $game = Get-Process FortniteClient-Win64-Shipping -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($game) { $session = Open-GameSession $game; $lastSeen = -1000; $lastDiagnosticText = $null }
         }
@@ -213,26 +277,35 @@ try {
             Start-Sleep -Milliseconds 250
             continue
         }
-        $width = $rect.Right - $rect.Left
-        $height = $rect.Bottom - $rect.Top
-        # The XP toast in the observed Russian HUD is centered near 70% x, 33% y.
-        $x = $rect.Left + [int]($width * 0.60)
-        $y = $rect.Top + [int]($height * 0.24)
-        $frame = [Drawing.Bitmap]::new([int]($width * 0.19), [int]($height * 0.18))
-        $capture = [Drawing.Graphics]::FromImage($frame)
-        try {
-            $capture.CopyFromScreen($x, $y, 0, 0, $frame.Size)
-            $reward = Read-Reward $frame
-            $isChest = Has-ChestReward $reward
-        }
-        finally {
-            $capture.Dispose()
-            $frame.Dispose()
+        $reward = Read-HudArea $rect (Get-RewardArea "$OutputPath.region")
+        $isChest = Has-ChestReward $reward
+        $now = $watch.ElapsedMilliseconds
+        if (($now - $lastSpectatorCheck) -ge 1200 -or ($isChest -and ($now - $lastSpectatorCheck) -ge 350)) {
+            $lastSpectatorCheck = $now
+            try {
+                if (Test-SpectatorHud $rect) {
+                    $clearSamples = 0
+                    if (!$spectating) {
+                        $spectating = $true
+                        Set-SpectatorMarker $spectatorFile $true
+                    }
+                } elseif ($spectating) {
+                    $clearSamples++
+                    if ($clearSamples -ge 2) {
+                        $spectating = $false
+                        Set-SpectatorMarker $spectatorFile $false
+                    }
+                }
+            } catch [Runtime.InteropServices.ExternalException] {}
         }
         $diagnosticText = Get-RewardDiagnosticText $reward
         if ($isChest) {
             $now = $watch.ElapsedMilliseconds
-            if (($now - $lastSeen) -gt 650) {
+            if ($spectating) {
+                if ($diagnosticText -and $diagnosticText -ne $lastDiagnosticText) {
+                    Write-RewardDiagnostic 'spectating' $diagnosticText
+                }
+            } elseif (($now - $lastSeen) -gt 650) {
                 $total = Update-Count $true $session
                 Write-Host "Всего сундуков: $total"
                 Write-RewardDiagnostic 'counted' $diagnosticText
@@ -247,5 +320,5 @@ try {
         Start-Sleep -Milliseconds 120
     }
 }
-finally { Save-GameSession $session; $writeLock.Dispose(); $lock.Dispose() }
+finally { Set-SpectatorMarker $spectatorFile $false; Save-GameSession $session; $writeLock.Dispose(); $lock.Dispose() }
 

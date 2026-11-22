@@ -121,7 +121,8 @@ internal sealed partial class ChestIsland
         Find<TextBlock>("Game").Text = game.Length > 0 ? "●  Fortnite открыт" : "○  Fortnite закрыт";
         foreach (var process in game) process.Dispose();
         SyncAuto(game.Length > 0, live, overlay);
-        Find<TextBlock>("LiveStatus").Text = live ? "Включено" : "Остановлено";
+        Find<TextBlock>("LiveStatus").Text = live ? (IsSpectatorPaused() ? "Пауза · наблюдение" : "Включено") : "Остановлено";
+        Find<Button>("SwitchOverlayProfile").ToolTip = "Активен профиль " + ReadOverlayProfile() + ". Нажми, чтобы переключить.";
         Find<TextBlock>("OverlayStatus").Text = overlay ? "Включён · виден в Fortnite" : "Скрыт";
         Find<Button>("LiveToggle").Content = live ? "Остановить" : "Запустить";
         Find<Button>("OverlayToggle").Content = overlay ? "Скрыть" : "Показать";
@@ -270,17 +271,21 @@ internal sealed partial class ChestIsland
     {
         var label = Find<TextBlock>("GoalLabel");
         var bar = Find<ProgressBar>("GoalProgress");
+        var forecast = Find<TextBlock>("GoalForecast");
         Find<Button>("EditGoal").Content = goal > 0 ? "Изменить цель" : "Задать цель";
         if (goal <= 0)
         {
             label.Text = "Цель не задана";
             bar.Visibility = Visibility.Collapsed;
+            forecast.Visibility = Visibility.Collapsed;
             return;
         }
         var culture = CultureInfo.GetCultureInfo("ru-RU");
         label.Text = string.Format(culture, total >= goal ? "Цель достигнута  ·  {0:N0} / {1:N0}" : "Цель  ·  {0:N0} / {1:N0}", total, goal);
         bar.Value = Math.Max(0, Math.Min(1, (double)total / goal));
         bar.Visibility = Visibility.Visible;
+        forecast.Text = GoalForecast(total, goal);
+        forecast.Visibility = total < goal ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ShowHistory()
@@ -460,7 +465,7 @@ internal sealed partial class ChestIsland
     private Process Start(string script, bool move)
     {
         string exe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe");
-        string args = "-NoProfile -STA -ExecutionPolicy Bypass -File \"" + Path.Combine(folder, script) + "\"" + (move ? " -Move" : "");
+        string args = "-NoProfile -STA -ExecutionPolicy Bypass -File \"" + Path.Combine(folder, script) + "\"" + (move && script == "Overlay.ps1" ? " -Move" : "");
         if (move)
             return Process.Start(new ProcessStartInfo(exe, args) { WorkingDirectory = folder, WindowStyle = ProcessWindowStyle.Normal });
         return Process.Start(new ProcessStartInfo(exe, args) { WorkingDirectory = folder, UseShellExecute = false, CreateNoWindow = true });

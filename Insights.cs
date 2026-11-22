@@ -43,11 +43,16 @@ internal sealed partial class ChestIsland
             Text = "Показывается последнее распознанное уведомление. Если игра не показала уведомление или текст не прочитался, здесь может остаться предыдущая запись.",
             TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightGray, Margin = new Thickness(0, 8, 0, 10)
         });
-        content.Children.Add(new Button { Content = "Закрыть", HorizontalAlignment = HorizontalAlignment.Right, IsCancel = true });
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var calibrate = new Button { Content = "Настроить область", Margin = new Thickness(0, 0, 8, 0) };
+        calibrate.Click += (s, e) => { dialog.Close(); OpenCalibration(); };
+        actions.Children.Add(calibrate);
+        actions.Children.Add(new Button { Content = "Закрыть", IsCancel = true });
+        content.Children.Add(actions);
         var tick = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
         Action refresh = () =>
         {
-            running.Text = IsLive() ? "Распознавание включено" : "Распознавание остановлено";
+            running.Text = IsLive() ? (IsSpectatorPaused() ? "Пауза: режим наблюдения" : "Распознавание включено") : "Распознавание остановлено";
             string[] fields;
             try { fields = File.ReadAllLines(Path.Combine(data, "live-total.txt.diagnostic")); }
             catch (IOException) { fields = new string[0]; }
@@ -61,6 +66,7 @@ internal sealed partial class ChestIsland
             switch (fields[1])
             {
                 case "counted": status.Text = "Засчитано: найдено слово «СУНДУК»."; break;
+                case "spectating": status.Text = "Пропущено: открыт режим наблюдения."; break;
                 case "duplicate": status.Text = "Пропущено: повторное уведомление за короткий интервал."; break;
                 default: status.Text = "Пропущено: в прочитанном тексте нет слова «СУНДУК»."; break;
             }
@@ -75,6 +81,62 @@ internal sealed partial class ChestIsland
         tick.Start();
         dialog.Content = content;
         dialog.ShowDialog();
+    }
+
+    private bool IsSpectatorPaused()
+    {
+        return File.Exists(Path.Combine(data, "live-total.txt.spectator"));
+    }
+
+    private void OpenCalibration()
+    {
+        try
+        {
+            window.WindowState = WindowState.Minimized;
+            var editor = Start("Calibration.ps1", true);
+            editor.Exited += (sender, args) =>
+            {
+                int code = editor.ExitCode;
+                editor.Dispose();
+                window.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    RestoreWindow();
+                    Say(code == 0 ? "Калибровка завершена." : "Не удалось открыть калибровку. Проверь, что Fortnite запущен.");
+                }));
+            };
+            editor.EnableRaisingEvents = true;
+        }
+        catch (Exception ex) { RestoreWindow(); Say(ex.Message); }
+    }
+
+    private DateTime rateChecked;
+    private double cachedChestsPerHour;
+
+    private double RecentRate()
+    {
+        var now = DateTime.Now;
+        if (now - rateChecked < TimeSpan.FromSeconds(20)) return cachedChestsPerHour;
+        double seconds = 0, count = 0;
+        foreach (var session in ReadSessions())
+        {
+            if (session.Start.Date < now.Date.AddDays(-6) || session.Start.Date > now.Date || session.Seconds <= 0) continue;
+            seconds += session.Seconds;
+            count += session.Count;
+        }
+        rateChecked = now;
+        cachedChestsPerHour = seconds >= 60 && count > 0 ? count * 3600 / seconds : 0;
+        return cachedChestsPerHour;
+    }
+
+    private string GoalForecast(int total, int target)
+    {
+        int remaining = Math.Max(0, target - total);
+        string left = string.Format(Russian, "Осталось: {0:N0}", remaining);
+        double rate = RecentRate();
+        if (rate <= 0 || remaining == 0) return left;
+        long minutes = Math.Max(1, (long)Math.Ceiling(remaining * 60.0 / rate));
+        string time = minutes < 60 ? minutes + " мин" : (minutes / 60) + " ч " + (minutes % 60) + " мин";
+        return left + " · ≈ " + time + " в игре";
     }
 
     private UIElement BuildProgress(SortedDictionary<DateTime, long> days)

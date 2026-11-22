@@ -184,6 +184,7 @@
        </StackPanel>
        <TextBlock x:Name="GoalLabel" Text="Цель не задана" Foreground="#D8CDE7" FontSize="13" Margin="0,11,0,8" TextWrapping="Wrap"/>
        <ProgressBar x:Name="GoalProgress" Height="5" Maximum="1" Foreground="#C9AAFF" Background="#4D425B" BorderThickness="0" Visibility="Collapsed" Margin="0,0,0,4"/>
+       <TextBlock x:Name="GoalForecast" Foreground="#D8CDE7" FontSize="12" TextWrapping="Wrap" Margin="0,3,0,5"/>
        <Button x:Name="EditGoal" Content="Задать цель" Height="33" Margin="0,5,0,0" HorizontalAlignment="Left" Background="#3C324D" BorderBrush="#5D4C72"/>
       </StackPanel>
      </Border>
@@ -210,7 +211,8 @@
       <TextBlock x:Name="OverlayStatus" Foreground="{StaticResource Muted}" Margin="0,5,0,10" FontSize="12"/>
       <StackPanel Orientation="Horizontal">
        <Button x:Name="OverlayToggle" Margin="0,0,6,0"/>
-       <Button x:Name="MoveOverlay" Content="Переместить"/>
+       <Button x:Name="MoveOverlay" Content="Переместить" Margin="0,0,6,0"/>
+       <Button x:Name="SwitchOverlayProfile" Content="1 ↔ 2" ToolTip="Переключить профиль оверлея" AutomationProperties.Name="Переключить профиль оверлея"/>
       </StackPanel>
      </StackPanel>
     </Border>

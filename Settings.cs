@@ -43,6 +43,7 @@ internal sealed partial class ChestIsland
             autoStart = key != null && string.Equals(key.GetValue(StartupName) as string, StartupCommand, StringComparison.OrdinalIgnoreCase);
         if (startInTray && autoStart) window.Opacity = 0;
         Find<Button>("SettingsButton").Click += (sender, args) => OpenSettings();
+        Find<Button>("SwitchOverlayProfile").Click += (sender, args) => SwitchOverlayProfile();
         using (var process = Process.GetCurrentProcess())
             trayIcon = System.Drawing.Icon.ExtractAssociatedIcon(process.MainModule.FileName);
         tray = new Forms.NotifyIcon { Icon = trayIcon ?? System.Drawing.SystemIcons.Application, Text = "Chest Island" };
@@ -132,14 +133,47 @@ internal sealed partial class ChestIsland
         if (trayIcon != null) trayIcon.Dispose();
     }
 
-    private void ReadOverlaySettings(out int size, out int opacity, out string mode)
+    private int ReadOverlayProfile()
+    {
+        try { return File.ReadAllText(Path.Combine(data, "overlay-profile.txt")).Trim() == "2" ? 2 : 1; }
+        catch (IOException) { return 1; }
+    }
+
+    private string OverlaySettingsPath(int profile)
+    {
+        return Path.Combine(data, profile == 2 ? "overlay-settings-2.txt" : "overlay-settings.txt");
+    }
+
+    private void WritePreference(string path, string value)
+    {
+        Directory.CreateDirectory(data);
+        string pending = path + ".new";
+        File.WriteAllText(pending, value);
+        if (File.Exists(path)) File.Replace(pending, path, null);
+        else File.Move(pending, path);
+    }
+
+    private void SwitchOverlayProfile()
+    {
+        int profile = ReadOverlayProfile() == 1 ? 2 : 1;
+        try
+        {
+            WritePreference(Path.Combine(data, "overlay-profile.txt"), profile.ToString(CultureInfo.InvariantCulture));
+            Say("Активен профиль оверлея " + profile + ".");
+            Refresh();
+        }
+        catch (IOException ex) { Say(ex.Message); }
+        catch (UnauthorizedAccessException ex) { Say(ex.Message); }
+    }
+
+    private void ReadOverlaySettings(int profile, out int size, out int opacity, out string mode)
     {
         size = 1;
         opacity = 89;
         mode = "goal";
         try
         {
-            var parts = File.ReadAllText(Path.Combine(data, "overlay-settings.txt")).Trim().Split(',');
+            var parts = File.ReadAllText(OverlaySettingsPath(profile)).Trim().Split(',');
             int parsedSize, parsedOpacity;
             if (parts.Length != 3 || !int.TryParse(parts[0], out parsedSize) || !int.TryParse(parts[1], out parsedOpacity)) return;
             if (parsedSize >= 0 && parsedSize <= 2) size = parsedSize;
@@ -170,7 +204,8 @@ internal sealed partial class ChestIsland
     {
         int savedSize, savedOpacity;
         string savedMode;
-        ReadOverlaySettings(out savedSize, out savedOpacity, out savedMode);
+        int activeProfile = ReadOverlayProfile();
+        ReadOverlaySettings(activeProfile, out savedSize, out savedOpacity, out savedMode);
         var sizes = new[] { "Маленький", "Средний", "Большой" };
         var modes = new[] { "Общий счёт", "Прогресс цели", "Сегодня" };
         var modeKeys = new[] { "total", "goal", "today" };
@@ -194,6 +229,9 @@ internal sealed partial class ChestIsland
             Text = "При запуске Fortnite автоматически включаются распознавание и оверлей.",
             TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightGray, Margin = new Thickness(0, 5, 0, 0)
         });
+        panel.Children.Add(new TextBlock { Text = "Профиль оверлея", Margin = new Thickness(0, 13, 0, 4) });
+        var profile = new ComboBox { ItemsSource = new[] { "Профиль 1", "Профиль 2" }, SelectedIndex = activeProfile - 1, Height = 27 };
+        panel.Children.Add(profile);
         panel.Children.Add(new TextBlock { Text = "Размер", Margin = new Thickness(0, 13, 0, 4) });
         var size = new ComboBox { ItemsSource = sizes, SelectedIndex = savedSize, Height = 27 };
         panel.Children.Add(size);
@@ -225,6 +263,16 @@ internal sealed partial class ChestIsland
             else if (mode.SelectedIndex == 1 && goal > 0) previewText.Text = total + " / " + goal;
             else previewText.Text = "Сундуки: " + total;
         };
+        profile.SelectionChanged += (s, e) =>
+        {
+            int nextSize, nextOpacity;
+            string nextMode;
+            ReadOverlaySettings(profile.SelectedIndex + 1, out nextSize, out nextOpacity, out nextMode);
+            size.SelectedIndex = nextSize;
+            opacity.Value = nextOpacity;
+            mode.SelectedIndex = Array.IndexOf(modeKeys, nextMode);
+            previewChanged();
+        };
         size.SelectionChanged += (s, e) => previewChanged();
         mode.SelectionChanged += (s, e) => previewChanged();
         opacity.ValueChanged += (s, e) => previewChanged();
@@ -241,12 +289,9 @@ internal sealed partial class ChestIsland
         {
             try
             {
-                Directory.CreateDirectory(data);
-                string path = Path.Combine(data, "overlay-settings.txt");
-                string pending = path + ".new";
-                File.WriteAllText(pending, size.SelectedIndex + "," + (int)opacity.Value + "," + modeKeys[mode.SelectedIndex]);
-                if (File.Exists(path)) File.Replace(pending, path, null);
-                else File.Move(pending, path);
+                int selectedProfile = profile.SelectedIndex + 1;
+                WritePreference(OverlaySettingsPath(selectedProfile), size.SelectedIndex + "," + (int)opacity.Value + "," + modeKeys[mode.SelectedIndex]);
+                WritePreference(Path.Combine(data, "overlay-profile.txt"), selectedProfile.ToString(CultureInfo.InvariantCulture));
                 SetAutoStart(startup.IsChecked == true);
                 dialog.DialogResult = true;
                 Refresh();

@@ -47,9 +47,21 @@ public sealed class ChestOverlay : Form {
 }
 "@
 
-$positionPath = Join-Path $env:APPDATA 'FortniteChestCounter/overlay-position.txt'
+$overlayData = Join-Path $env:APPDATA 'FortniteChestCounter'
 
-function Get-OverlayPosition([Drawing.Rectangle]$screen, [Drawing.Size]$size) {
+function Get-OverlayProfile {
+    try {
+        if ([IO.File]::ReadAllText((Join-Path $overlayData 'overlay-profile.txt')).Trim() -eq '2') { return 2 }
+    } catch [IO.IOException] {}
+    return 1
+}
+
+function Get-OverlayPath([string]$name, [int]$profile) {
+    if ($profile -eq 2) { $name += '-2' }
+    return (Join-Path $overlayData ($name + '.txt'))
+}
+
+function Get-OverlayPosition([Drawing.Rectangle]$screen, [Drawing.Size]$size, [string]$positionPath) {
     $x = [int]($screen.Width * 0.57)
     $y = 65
     try {
@@ -65,13 +77,12 @@ function Get-OverlayPosition([Drawing.Rectangle]$screen, [Drawing.Size]$size) {
     [Drawing.Point]::new(($screen.Left + $x), ($screen.Top + $y))
 }
 
-$overlayData = Join-Path $env:APPDATA 'FortniteChestCounter'
-$overlaySettingsPath = Join-Path $overlayData 'overlay-settings.txt'
 $historyPath = Join-Path $overlayData 'live-total.txt.history'
 $todayCache = @{ Key = ''; Count = 0 }
 $display = @{ AppliedSize = -1 }
 
-function Get-OverlaySettings {
+function Get-OverlaySettings([int]$profile) {
+    $overlaySettingsPath = Get-OverlayPath 'overlay-settings' $profile
     $size = 1
     $opacity = 89
     $mode = 'goal'
@@ -130,14 +141,16 @@ if ($Move) {
         $editor.KeyPreview = $true
         $editor.StartPosition = 'Manual'
         $editor.FormBorderStyle = 'None'
-        $settings = Get-OverlaySettings
+        $profile = Get-OverlayProfile
+        $positionPath = Get-OverlayPath 'overlay-position' $profile
+        $settings = Get-OverlaySettings $profile
         $editor.ClientSize = [Drawing.Size]::new($settings.Width, ($settings.Height + 30))
         $editor.BackColor = [Drawing.Color]::FromArgb(31, 25, 47)
         $game = Get-Process FortniteClient-Win64-Shipping -ErrorAction SilentlyContinue |
             Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
         $target = [Windows.Forms.Screen]::FromPoint([Windows.Forms.Cursor]::Position)
         if ($game) { $target = [Windows.Forms.Screen]::FromHandle($game.MainWindowHandle) }
-        $editor.Location = Get-OverlayPosition $target.Bounds ([Drawing.Size]::new($settings.Width,$settings.Height))
+        $editor.Location = Get-OverlayPosition $target.Bounds ([Drawing.Size]::new($settings.Width,$settings.Height)) $positionPath
         $data = Join-Path $env:APPDATA 'FortniteChestCounter/live-total.txt'
         $value = '0'
         if ([IO.File]::Exists($data)) { $value = [IO.File]::ReadAllText($data).Trim() }
@@ -227,7 +240,9 @@ try {
             Select-Object -First 1
         if (!$game) { $form.Hide(); return }
 
-        $settings = Get-OverlaySettings
+        $profile = Get-OverlayProfile
+        $positionPath = Get-OverlayPath 'overlay-position' $profile
+        $settings = Get-OverlaySettings $profile
         if ($display.AppliedSize -ne $settings.Size) {
             $form.ClientSize = [Drawing.Size]::new($settings.Width, $settings.Height)
             $oldFont = $display.Font
@@ -246,7 +261,7 @@ try {
             # Keep showing the last count while the counter updates the file.
         }
         $screen = [Windows.Forms.Screen]::FromHandle($foreground).Bounds
-        $form.Location = Get-OverlayPosition $screen $form.Size
+        $form.Location = Get-OverlayPosition $screen $form.Size $positionPath
         if (!$form.Visible) { $form.Show() }
         $form.KeepAboveGame()
     })
