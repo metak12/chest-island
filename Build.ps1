@@ -19,7 +19,7 @@ function Sign-Executable([string]$Path) {
 Push-Location $PSScriptRoot
 try {
     $app = Join-Path $OutputDirectory 'Chest Island.exe'
-    & $csc /nologo /target:winexe /optimize+ /win32icon:assets\ChestIsland.ico "/out:$app" "/reference:$fw\WPF\PresentationFramework.dll" "/reference:$fw\WPF\PresentationCore.dll" "/reference:$fw\WPF\WindowsBase.dll" "/reference:$fw\System.Xaml.dll" /reference:System.Management.dll /reference:System.Web.Extensions.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll .\ChestIsland.cs .\Settings.cs .\ReleaseUpdate.cs
+    & $csc /nologo /target:winexe /optimize+ /win32icon:assets\ChestIsland.ico "/out:$app" "/reference:$fw\WPF\PresentationFramework.dll" "/reference:$fw\WPF\PresentationCore.dll" "/reference:$fw\WPF\WindowsBase.dll" "/reference:$fw\System.Xaml.dll" /reference:System.Management.dll /reference:System.Web.Extensions.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll .\ChestIsland.cs .\Settings.cs .\DashboardUpdates.cs .\ReleaseUpdate.cs
     if ($LASTEXITCODE) { throw 'Chest Island compilation failed.' }
     Sign-Executable $app
     $setup = Join-Path $OutputDirectory 'Chest-Island-Setup.exe'

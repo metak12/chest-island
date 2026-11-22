@@ -51,6 +51,7 @@ internal sealed partial class ChestIsland
         menu.Items.Add("Выход", null, (sender, args) => { exiting = true; window.Close(); });
         tray.ContextMenuStrip = menu;
         tray.DoubleClick += (sender, args) => RestoreWindow();
+        tray.BalloonTipClicked += (sender, args) => RestoreWindow();
         tray.Visible = autoStart;
         window.Closing += HideInTray;
         openWindowEvent = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.AutoReset, OpenEvent);
@@ -91,15 +92,17 @@ internal sealed partial class ChestIsland
         if (!enabled) StopAutomatic();
     }
 
-    private void SyncAuto(bool gameOpen, bool live, bool overlay)
+    private async void SyncAuto(bool gameOpen, bool live, bool overlay)
     {
         if (!autoStart || gameWasOpen == gameOpen) return;
         gameWasOpen = gameOpen;
         if (!gameOpen) { StopAutomatic(); return; }
         try
         {
-            if (!live) automaticLive = Start("Live.ps1", false);
-            if (!overlay) automaticOverlay = Start("Overlay.ps1", false);
+            if (live && overlay) return;
+            if (!await AllowStart(true) || !autoStart || gameWasOpen != true) return;
+            if (!IsLive()) automaticLive = Start("Live.ps1", false);
+            if (!IsOverlay()) automaticOverlay = Start("Overlay.ps1", false);
         }
         catch (Exception ex) { Say("Автозапуск Fortnite: " + ex.Message); }
     }

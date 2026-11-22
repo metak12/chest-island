@@ -35,13 +35,14 @@ internal sealed partial class ChestIsland
                 SignalOpenWindow();
                 return;
             }
-            try { new Application().Run(new ChestIsland(Array.IndexOf(args, "--tray") >= 0).window); }
+            try { new Application().Run(new ChestIsland(args).window); }
             catch (Exception ex) { MessageBox.Show(ex.Message, "Chest Island", MessageBoxButton.OK, MessageBoxImage.Error); }
         }
     }
 
-    private ChestIsland(bool startInTray)
+    private ChestIsland(string[] args)
     {
+        bool startInTray = Array.IndexOf(args, "--tray") >= 0;
         using (var layout = File.OpenRead(Path.Combine(folder, "ChestIsland.xaml")))
             window = (Window)XamlReader.Load(layout);
         using (var icon = System.Drawing.Icon.ExtractAssociatedIcon(Process.GetCurrentProcess().MainModule.FileName))
@@ -50,8 +51,8 @@ internal sealed partial class ChestIsland
         Find<Image>("BrandIcon").Source = window.Icon;
         Find<TextBlock>("Version").Text = "Версия " + ReleaseUpdate.VersionText;
         UseDarkTitle(window);
-        Find<Button>("LiveToggle").Click += (s, e) => Toggle("Live.ps1", IsLive);
-        Find<Button>("OverlayToggle").Click += (s, e) => Toggle("Overlay.ps1", IsOverlay);
+        Find<Button>("LiveToggle").Click += async (s, e) => await Toggle("Live.ps1", IsLive);
+        Find<Button>("OverlayToggle").Click += async (s, e) => await Toggle("Overlay.ps1", IsOverlay);
         InitializeSettings(startInTray);
         goal = ReadGoal();
         Find<Button>("EditCount").Click += (s, e) => EditCount(false);
@@ -61,14 +62,19 @@ internal sealed partial class ChestIsland
         Find<Button>("UpdateButton").Click += async (s, e) => await UpdateClick();
         timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
         timer.Tick += (s, e) => Refresh();
-        window.Loaded += (s, e) =>
+        window.Loaded += async (s, e) =>
         {
             if (startInTray && autoStart) window.Hide();
             window.Opacity = 1;
             if (window.IsVisible && SystemParameters.ClientAreaAnimation)
                 Find<Grid>("Dashboard").BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(280)));
             timer.Start();
-            CheckForUpdates(false);
+            await CheckForUpdates(false);
+            if (exiting || update != null) return;
+            if (Array.IndexOf(args, "--resume-live") >= 0 && !IsLive())
+                using (Start("Live.ps1", false)) { }
+            if (Array.IndexOf(args, "--resume-overlay") >= 0 && !IsOverlay())
+                using (Start("Overlay.ps1", false)) { }
         };
         window.Closed += (s, e) => { timer.Stop(); DisposeSettings(); };
         Refresh();
@@ -141,7 +147,7 @@ internal sealed partial class ChestIsland
         previous = value;
     }
 
-    private void Toggle(string script, Func<bool> active)
+    private async System.Threading.Tasks.Task Toggle(string script, Func<bool> active)
     {
         try
         {
@@ -152,10 +158,17 @@ internal sealed partial class ChestIsland
                 Refresh();
                 return;
             }
-            var process = Start(script, false);
-            Say("Запускаю…");
             var button = Find<Button>(script == "Live.ps1" ? "LiveToggle" : "OverlayToggle");
             button.IsEnabled = false;
+            try
+            {
+                if (!await AllowStart(false) || active()) { button.IsEnabled = true; return; }
+            }
+            catch { button.IsEnabled = true; throw; }
+            Process process;
+            try { process = Start(script, false); }
+            catch { button.IsEnabled = true; throw; }
+            Say("Запускаю…");
             var ready = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
             ready.Tick += (s, e) =>
             {
@@ -169,41 +182,6 @@ internal sealed partial class ChestIsland
             ready.Start();
         }
         catch (Exception ex) { Say(ex.Message); }
-    }
-
-    private async void CheckForUpdates(bool manual)
-    {
-        var button = Find<Button>("UpdateButton");
-        button.IsEnabled = false;
-        try
-        {
-            update = await ReleaseUpdate.Check();
-            if (update != null) button.Content = "Обновить до " + update.Version;
-            else if (manual) Say("Установлена актуальная версия " + ReleaseUpdate.VersionText + ".");
-        }
-        catch (Exception ex)
-        {
-            if (manual) Say("Не удалось проверить обновления. " + ex.Message);
-        }
-        finally { button.IsEnabled = true; }
-    }
-
-    private async System.Threading.Tasks.Task UpdateClick()
-    {
-        if (update == null) { CheckForUpdates(true); return; }
-        var button = Find<Button>("UpdateButton");
-        button.IsEnabled = false;
-        Say("Скачиваю и проверяю установщик…");
-        try
-        {
-            var selected = update;
-            string path = await System.Threading.Tasks.Task.Run(() => selected.Download());
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-            exiting = true;
-            window.Close();
-        }
-        catch (Exception ex) { Say("Не удалось запустить обновление. " + ex.Message); }
-        finally { button.IsEnabled = true; }
     }
 
     private void EditCount(bool editingGoal)

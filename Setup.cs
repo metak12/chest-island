@@ -23,6 +23,11 @@ internal static class Setup
 
             string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", AppName);
             string app = Path.Combine(directory, Files[0]);
+            if (args.Length >= 2 && args[0] == "--apply-update")
+            {
+                ApplyUpdate(directory, app, args);
+                return 0;
+            }
             foreach (var process in Process.GetProcessesByName(AppName))
                 using (process)
                     if (string.Equals(process.MainModule.FileName, app, StringComparison.OrdinalIgnoreCase))
@@ -33,9 +38,96 @@ internal static class Setup
         }
         catch (Exception ex)
         {
-            if (args.Length == 0) MessageBox.Show(ex.Message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (args.Length == 0 || args[0] == "--apply-update") MessageBox.Show(ex.Message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
+    }
+
+    private static void ApplyUpdate(string directory, string app, string[] args)
+    {
+        int id;
+        if (!int.TryParse(args[1], out id) || id <= 0 || !File.Exists(app))
+            throw new InvalidOperationException("Не найдена установленная копия Chest Island.");
+
+        Process parent = null;
+        try { parent = Process.GetProcessById(id); }
+        catch (ArgumentException) { }
+        using (parent)
+        {
+            if (parent != null && !parent.HasExited)
+            {
+                if (!string.Equals(parent.MainModule.FileName, app, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Процесс обновления не принадлежит Chest Island.");
+                if (!parent.WaitForExit(15000))
+                    throw new InvalidOperationException("Chest Island не успел закрыться. Повтори обновление.");
+            }
+        }
+        string resume = (Array.IndexOf(args, "--resume-live") >= 0 ? "--resume-live " : "") +
+                        (Array.IndexOf(args, "--resume-overlay") >= 0 ? "--resume-overlay" : "");
+        try { ReplaceInstalledFiles(directory); }
+        catch
+        {
+            if (File.Exists(app)) Process.Start(new ProcessStartInfo(app, resume) { WorkingDirectory = directory });
+            throw;
+        }
+        Process.Start(new ProcessStartInfo(app, resume) { WorkingDirectory = directory });
+    }
+
+    private static void ReplaceInstalledFiles(string directory)
+    {
+        string stage = Path.Combine(directory, ".update-" + Guid.NewGuid().ToString("N"));
+        var committed = new System.Collections.Generic.List<string>();
+        bool keepBackups = false;
+        try
+        {
+            Extract(stage);
+            // Replace the executable last. Backups let the previous version restart if a file is locked.
+            for (int i = Files.Length - 1; i >= 0; i--)
+            {
+                string name = Files[i], destination = Path.Combine(directory, name);
+                string pending = Path.Combine(stage, name), backup = pending + ".previous";
+                if (File.Exists(destination)) File.Replace(pending, destination, backup);
+                else File.Move(pending, destination);
+                committed.Add(name);
+            }
+        }
+        catch
+        {
+            try
+            {
+                committed.Reverse();
+                foreach (string name in committed)
+                {
+                    string target = Path.Combine(directory, name);
+                    string backup = Path.Combine(stage, name + ".previous");
+                    if (File.Exists(backup)) File.Replace(backup, target, null);
+                    else File.Delete(target);
+                }
+            }
+            catch { keepBackups = true; throw; }
+            throw;
+        }
+        finally
+        {
+            if (!keepBackups && Directory.Exists(stage))
+            {
+                foreach (string name in Files)
+                {
+                    TryDelete(Path.Combine(stage, name));
+                    TryDelete(Path.Combine(stage, name + ".previous"));
+                }
+                try { Directory.Delete(stage); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { File.Delete(path); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private static void ShowInstaller(string directory, string app)
