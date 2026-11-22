@@ -1,0 +1,32 @@
+name: Publish Windows installer
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version from ReleaseUpdate.cs, such as 1.1.0
+        required: true
+        default: '1.1.0'
+  push:
+    branches: [main]
+    paths: ['.github/workflows/release.yml']
+permissions:
+  contents: write
+jobs:
+  release:
+    if: github.repository == 'metak12/chest-island'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Build and publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          $source = Get-Content ReleaseUpdate.cs -Raw
+          if ($source -notmatch 'VersionText = "(\d+\.\d+\.\d+)"') { throw 'Version missing' }
+          $version = $Matches[1]
+          if ($env:REQUESTED_VERSION -and $env:REQUESTED_VERSION -ne $version) { throw 'Version mismatch' }
+          ./Build.ps1
+          gh release create "v$version" ./dist/Chest-Island-Setup.exe --target $env:GITHUB_SHA --title "Chest Island $version" --notes "Windows installer for Chest Island. Includes mouse placement and experimental rare and spirit chest recognition from Russian HUD labels." --latest
+          if ($LASTEXITCODE) { throw 'Release publication failed' }
