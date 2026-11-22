@@ -47,6 +47,9 @@ internal sealed partial class ChestIsland
         using (var icon = System.Drawing.Icon.ExtractAssociatedIcon(Process.GetCurrentProcess().MainModule.FileName))
             if (icon != null) window.Icon = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
                 icon.Handle, Int32Rect.Empty, System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+        Find<Image>("BrandIcon").Source = window.Icon;
+        Find<TextBlock>("Version").Text = "Версия " + ReleaseUpdate.VersionText;
+        UseDarkTitle(window);
         Find<Button>("LiveToggle").Click += (s, e) => Toggle("Live.ps1", IsLive);
         Find<Button>("OverlayToggle").Click += (s, e) => Toggle("Overlay.ps1", IsOverlay);
         InitializeSettings(startInTray);
@@ -69,6 +72,20 @@ internal sealed partial class ChestIsland
         };
         window.Closed += (s, e) => { timer.Stop(); DisposeSettings(); };
         Refresh();
+    }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr handle, int attribute, ref int value, int size);
+
+    private static void UseDarkTitle(Window target)
+    {
+        target.SourceInitialized += (sender, args) =>
+        {
+            int dark = 1;
+            var handle = new System.Windows.Interop.WindowInteropHelper(target).Handle;
+            if (DwmSetWindowAttribute(handle, 20, ref dark, sizeof(int)) != 0)
+                DwmSetWindowAttribute(handle, 19, ref dark, sizeof(int));
+        };
     }
 
     private T Find<T>(string name) where T : class { return (T)window.FindName(name); }
@@ -246,6 +263,7 @@ internal sealed partial class ChestIsland
             }
             catch (Exception ex) { error.Text = ex.Message; }
         };
+        UseDarkTitle(dialog);
         dialog.ShowDialog();
     }
 
@@ -273,6 +291,7 @@ internal sealed partial class ChestIsland
     {
         var label = Find<TextBlock>("GoalLabel");
         var bar = Find<ProgressBar>("GoalProgress");
+        Find<Button>("EditGoal").Content = goal > 0 ? "Изменить цель" : "Задать цель";
         if (goal <= 0)
         {
             label.Text = "Цель не задана";
@@ -341,6 +360,7 @@ internal sealed partial class ChestIsland
         tabs.Items.Add(new TabItem { Header = "Сессии", Content = SessionHistory() });
         panel.Children.Add(tabs);
         dialog.Content = panel;
+        UseDarkTitle(dialog);
         dialog.ShowDialog();
     }
 

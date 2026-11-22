@@ -252,6 +252,7 @@ internal sealed partial class ChestIsland
             catch (Exception ex) { error.Text = ex.Message; }
         };
         dialog.Content = panel;
+        UseDarkTitle(dialog);
         dialog.ShowDialog();
     }
 }
