@@ -88,14 +88,6 @@ internal sealed class ChestIsland
         Find<Button>("OverlayToggle").Content = overlay ? "Скрыть" : "Показать";
         Find<Button>("MoveOverlay").IsEnabled = editor == null || editor.HasExited;
 
-        try
-        {
-            var types = File.ReadAllText(Path.Combine(data, "live-total.txt.types")).Trim().Split(',');
-            long rare, spirit;
-            if (types.Length == 2 && long.TryParse(types[0], out rare) && long.TryParse(types[1], out spirit))
-                Find<TextBlock>("Types").Text = string.Format("Редкие: {0}   ·   С духом: {1}", rare, spirit);
-        }
-        catch (IOException) { }
         int value;
         try { if (!int.TryParse(File.ReadAllText(Path.Combine(data, "live-total.txt")), out value)) return; }
         catch (IOException) { return; }

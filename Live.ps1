@@ -58,17 +58,8 @@ function Read-Reward([Drawing.Bitmap]$frame) {
     }
 }
 
-function Get-ChestKind($result) {
-    $ordinary = $false
-    foreach ($line in $result.Lines) {
-        $text = ($line.Text.Trim() -replace '\s+', ' ').ToUpperInvariant()
-        switch -Regex ($text) {
-            '^(СУНДУК (ДУХОВ|ДУХА|С ДУХОМ|С ДУХАМИ))$' { return 'spirit' }
-            '^(РЕДКИЙ СУНДУК|СУНДУК РЕДКОЙ РЕДКОСТИ)$' { return 'rare' }
-            '^СУНДУК$' { $ordinary = $true }
-        }
-    }
-    if ($ordinary) { return 'ordinary' }
+function Has-ChestReward($result) {
+    return ($result.Text -match '\bСУНДУК\b')
 }
 
 if ($TestImage) {
@@ -76,7 +67,7 @@ if ($TestImage) {
     try {
         $result = Read-Reward $frame
         Write-Host $result.Text
-        Write-Output (Get-ChestKind $result)
+        Write-Output (Has-ChestReward $result)
     }
     finally { $frame.Dispose() }
     exit
@@ -105,28 +96,15 @@ function Write-Count([int]$count) {
 
 $writeLock = [Threading.Mutex]::new($false, 'Local\FortniteChestTotalWrite')
 
-function Update-Count([string]$kind) {
+function Update-Count([bool]$increment) {
     try { [void]$writeLock.WaitOne() }
     catch [Threading.AbandonedMutexException] {}
     try {
         $value = 0
         $exists = [IO.File]::Exists($OutputPath)
         if ($exists) { $value = [int][IO.File]::ReadAllText($OutputPath) }
-        if ($kind -and $value -lt [int]::MaxValue) {
+        if ($increment -and $value -lt [int]::MaxValue) {
             $value++
-            if ($kind -in 'rare','spirit') {
-                $typesPath = "$OutputPath.types"
-                $rare = 0
-                $spirit = 0
-                if ([IO.File]::Exists($typesPath) -and [IO.File]::ReadAllText($typesPath) -match '^(\d+),(\d+)$') {
-                    $rare = [long]$Matches[1]
-                    $spirit = [long]$Matches[2]
-                }
-                if ($kind -eq 'rare') { $rare++ } else { $spirit++ }
-                [IO.File]::WriteAllText("$typesPath.tmp", "$rare,$spirit")
-                if ([IO.File]::Exists($typesPath)) { [IO.File]::Replace("$typesPath.tmp", $typesPath, "$typesPath.bak") }
-                else { [IO.File]::Move("$typesPath.tmp", $typesPath) }
-            }
             Write-Count $value
         } elseif (!$exists) {
             Write-Count $value
@@ -137,7 +115,7 @@ function Update-Count([string]$kind) {
 }
 
 try {
-    $total = Update-Count ''
+    $total = Update-Count $false
     Write-Host "Всего сундуков: $total"
     Write-Host "Файл для OBS: $OutputPath"
     Write-Host 'Слежу за уведомлениями в активном окне Fortnite. Для выхода нажми Ctrl+C.'
@@ -169,16 +147,16 @@ try {
         $capture = [Drawing.Graphics]::FromImage($frame)
         try {
             $capture.CopyFromScreen($x, $y, 0, 0, $frame.Size)
-            $kind = Get-ChestKind (Read-Reward $frame)
+            $isChest = Has-ChestReward (Read-Reward $frame)
         }
         finally {
             $capture.Dispose()
             $frame.Dispose()
         }
-        if ($kind) {
+        if ($isChest) {
             $now = $watch.ElapsedMilliseconds
             if (($now - $lastSeen) -gt 650) {
-                $total = Update-Count $kind
+                $total = Update-Count $true
                 Write-Host "Всего сундуков: $total"
             }
             $lastSeen = $now
