@@ -310,14 +310,14 @@ internal sealed partial class ChestIsland
 
         var dialog = new Window
         {
-            Title = "История сундуков", Owner = window, Width = 430, Height = 480,
+            Title = "История сундуков", Owner = window, Width = 510, Height = 520,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = window.Background, Foreground = window.Foreground, ShowInTaskbar = false
         };
         var panel = new DockPanel { Margin = new Thickness(20), Resources = window.Resources };
         var summary = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
         DockPanel.SetDock(summary, Dock.Top);
-        summary.Children.Add(new TextBlock { Text = "История по дням", FontSize = 24, FontWeight = FontWeights.SemiBold });
+        summary.Children.Add(new TextBlock { Text = "История сундуков", FontSize = 24, FontWeight = FontWeights.SemiBold });
         long today;
         days.TryGetValue(DateTime.Today, out today);
         summary.Children.Add(new TextBlock { Text = "Сегодня: " + today, Margin = new Thickness(0, 5, 0, 0) });
@@ -336,9 +336,84 @@ internal sealed partial class ChestIsland
         foreach (var day in rows)
             list.Items.Add(string.Format(CultureInfo.GetCultureInfo("ru-RU"), "{0:d MMMM yyyy}    ·    {1:N0}", day, days[day]));
         if (rows.Count == 0) list.Items.Add("Пока нет записей.");
-        panel.Children.Add(list);
+        var tabs = new TabControl();
+        tabs.Items.Add(new TabItem { Header = "По дням", Content = list });
+        tabs.Items.Add(new TabItem { Header = "Сессии", Content = SessionHistory() });
+        panel.Children.Add(tabs);
         dialog.Content = panel;
         dialog.ShowDialog();
+    }
+
+    private sealed class GameSession
+    {
+        public DateTime Start;
+        public long Seconds;
+        public long Count;
+    }
+
+    private System.Collections.Generic.List<GameSession> ReadSessions()
+    {
+        var sessions = new System.Collections.Generic.List<GameSession>();
+        string directory = Path.Combine(data, "live-total.txt.sessions");
+        if (!Directory.Exists(directory)) return sessions;
+        foreach (string path in Directory.EnumerateFiles(directory, "*.txt"))
+        {
+            try
+            {
+                var fields = File.ReadAllText(path).Trim().Split(',');
+                long ticks, seconds, count;
+                if (fields.Length != 3 || !long.TryParse(fields[0], out ticks) || ticks <= 0 || ticks > DateTime.MaxValue.Ticks ||
+                    !long.TryParse(fields[1], out seconds) || seconds < 0 || !long.TryParse(fields[2], out count) || count < 0)
+                    continue;
+                sessions.Add(new GameSession { Start = new DateTime(ticks, DateTimeKind.Utc).ToLocalTime(), Seconds = seconds, Count = count });
+            }
+            catch (IOException) { }
+        }
+        sessions.Sort((a, b) => b.Start.CompareTo(a.Start));
+        return sessions;
+    }
+
+    private UIElement SessionHistory()
+    {
+        var culture = CultureInfo.GetCultureInfo("ru-RU");
+        var sessions = ReadSessions();
+        var contents = new DockPanel { Background = new SolidColorBrush(Color.FromRgb(33, 29, 45)) };
+        var description = new TextBlock
+        {
+            Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(10, 10, 10, 6),
+            Text = "Один запуск Fortnite — одна сессия. Время учитывается, пока включено распознавание. История сессий ведётся с версии 1.1.6."
+        };
+        DockPanel.SetDock(description, Dock.Top);
+        contents.Children.Add(description);
+        var list = new ListBox
+        {
+            Background = Brushes.Transparent, Foreground = window.Foreground, BorderThickness = new Thickness(0),
+            Padding = new Thickness(8, 0, 8, 8)
+        };
+        contents.Children.Add(list);
+        if (sessions.Count == 0)
+        {
+            list.Items.Add("Пока нет игровых сессий.");
+            return contents;
+        }
+        foreach (var session in sessions)
+        {
+            string duration = string.Format(culture, "{0} ч {1:00} мин", session.Seconds / 3600, session.Seconds / 60 % 60);
+            if (session.Seconds < 60) duration = string.Format(culture, "{0} сек", session.Seconds);
+            string rate = session.Seconds >= 60 ? (session.Count * 3600.0 / session.Seconds).ToString("N1", culture) + " / ч" : "— / ч";
+            var row = new StackPanel { Margin = new Thickness(3, 6, 3, 6) };
+            row.Children.Add(new TextBlock
+            {
+                Text = session.Start.ToString("d MMMM yyyy · HH:mm", culture), FontWeight = FontWeights.SemiBold
+            });
+            row.Children.Add(new TextBlock
+            {
+                Text = string.Format(culture, "Сундуки: {0:N0}   ·   {1}   ·   {2}", session.Count, duration, rate),
+                Foreground = Brushes.LightGray, Margin = new Thickness(0, 3, 0, 0)
+            });
+            list.Items.Add(row);
+        }
+        return contents;
     }
 
     private int SaveCount(int value)

@@ -96,7 +96,47 @@ function Write-Count([int]$count) {
 
 $writeLock = [Threading.Mutex]::new($false, 'Local\FortniteChestTotalWrite')
 
-function Update-Count([bool]$increment) {
+function Open-GameSession([Diagnostics.Process]$process) {
+    try { $started = $process.StartTime.ToUniversalTime() }
+    catch [InvalidOperationException] { return }
+    catch [ComponentModel.Win32Exception] { return }
+
+    $folder = "$OutputPath.sessions"
+    $path = Join-Path $folder "$($process.Id)-$($started.Ticks).txt"
+    $session = @{
+        Path = $path; StartTicks = [DateTime]::UtcNow.Ticks; Count = [long]0; PreviousSeconds = [long]0
+        Clock = [Diagnostics.Stopwatch]::StartNew(); LastSaved = -5000
+    }
+    try {
+        if ([IO.File]::Exists($path) -and [IO.File]::ReadAllText($path) -match '^(\d+),(\d+),(\d+)$') {
+            $session.StartTicks = [long]$Matches[1]
+            $session.PreviousSeconds = [long]$Matches[2]
+            $session.Count = [long]$Matches[3]
+        }
+    } catch [IO.IOException] {
+        Write-Warning "Не удалось прочитать статистику сессии: $($_.Exception.Message)"
+        return
+    }
+    return $session
+}
+
+function Save-GameSession([hashtable]$session) {
+    if (!$session) { return }
+    $elapsed = $session.Clock.ElapsedMilliseconds
+    $duration = $session.PreviousSeconds + [long][Math]::Floor($elapsed / 1000)
+    $path = $session.Path
+    try {
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))
+        [IO.File]::WriteAllText("$path.tmp", "$($session.StartTicks),$duration,$($session.Count)")
+        if ([IO.File]::Exists($path)) { [IO.File]::Replace("$path.tmp", $path, "$path.bak") }
+        else { [IO.File]::Move("$path.tmp", $path) }
+    } catch [IO.IOException] {
+        Write-Warning "Не удалось сохранить статистику сессии: $($_.Exception.Message)"
+    }
+    $session.LastSaved = $elapsed
+}
+
+function Update-Count([bool]$increment, [hashtable]$session) {
     try { [void]$writeLock.WaitOne() }
     catch [Threading.AbandonedMutexException] {}
     try {
@@ -106,6 +146,7 @@ function Update-Count([bool]$increment) {
         if ($increment -and $value -lt [int]::MaxValue) {
             $value++
             Write-Count $value
+            if ($session) { $session.Count++; Save-GameSession $session }
             try {
                 $day = [DateTime]::Now.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)
                 [IO.File]::AppendAllText("$OutputPath.history", $day + [Environment]::NewLine)
@@ -120,6 +161,7 @@ function Update-Count([bool]$increment) {
     finally { $writeLock.ReleaseMutex() }
 }
 
+$session = $null
 try {
     $total = Update-Count $false
     Write-Host "Всего сундуков: $total"
@@ -130,7 +172,13 @@ try {
     $game = $null
     while ($true) {
         if (!$game -or $game.HasExited) {
+            if ($session) { Save-GameSession $session; $session = $null }
+            if ($game) { $game.Dispose() }
             $game = Get-Process FortniteClient-Win64-Shipping -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($game) { $session = Open-GameSession $game; $lastSeen = -1000 }
+        }
+        if ($session -and ($session.Clock.ElapsedMilliseconds - $session.LastSaved) -ge 5000) {
+            Save-GameSession $session
         }
         $window = [FortniteWindow]::GetForegroundWindow()
         [uint32]$owner = 0
@@ -162,7 +210,7 @@ try {
         if ($isChest) {
             $now = $watch.ElapsedMilliseconds
             if (($now - $lastSeen) -gt 650) {
-                $total = Update-Count $true
+                $total = Update-Count $true $session
                 Write-Host "Всего сундуков: $total"
             }
             $lastSeen = $now
@@ -170,5 +218,5 @@ try {
         Start-Sleep -Milliseconds 120
     }
 }
-finally { $writeLock.Dispose(); $lock.Dispose() }
+finally { Save-GameSession $session; $writeLock.Dispose(); $lock.Dispose() }
 
