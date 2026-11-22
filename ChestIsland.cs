@@ -58,6 +58,7 @@ internal sealed partial class ChestIsland
         Find<Button>("EditCount").Click += (s, e) => EditCount(false);
         Find<Button>("EditGoal").Click += (s, e) => EditCount(true);
         Find<Button>("History").Click += (s, e) => ShowHistory();
+        Find<Button>("DiagnosticsButton").Click += (s, e) => ShowDiagnostics();
         Find<Button>("MoveOverlay").Click += (s, e) => Move();
         Find<Button>("UpdateButton").Click += async (s, e) => await UpdateClick();
         timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
@@ -336,6 +337,7 @@ internal sealed partial class ChestIsland
         var tabs = new TabControl();
         tabs.Items.Add(new TabItem { Header = "По дням", Content = list });
         tabs.Items.Add(new TabItem { Header = "Сессии", Content = SessionHistory() });
+        tabs.Items.Add(new TabItem { Header = "Прогресс", Content = BuildProgress(days) });
         panel.Children.Add(tabs);
         dialog.Content = panel;
         UseDarkTitle(dialog);

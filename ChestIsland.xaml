@@ -135,6 +135,9 @@
      <Button x:Name="History" Style="{StaticResource SidebarButton}" AutomationProperties.Name="История" Margin="0,0,0,3">
       <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE81C;" Style="{StaticResource SidebarIcon}"/><TextBlock Text="История"/></StackPanel>
      </Button>
+     <Button x:Name="DiagnosticsButton" Style="{StaticResource SidebarButton}" AutomationProperties.Name="Диагностика" Margin="0,0,0,3">
+      <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE9D9;" Style="{StaticResource SidebarIcon}"/><TextBlock Text="Диагностика"/></StackPanel>
+     </Button>
      <Button x:Name="SettingsButton" Style="{StaticResource SidebarButton}" AutomationProperties.Name="Настройки">
       <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" Style="{StaticResource SidebarIcon}"/><TextBlock Text="Настройки"/></StackPanel>
      </Button>

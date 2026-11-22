@@ -62,6 +62,26 @@ function Has-ChestReward($result) {
     return ($result.Text -match '\bСУНДУК\b')
 }
 
+function Get-RewardDiagnosticText($result) {
+    $normalized = ([string]$result.Text -replace '\s+', ' ').Trim()
+    if ($normalized -notmatch '(?i)(?:СУНД|\+\s*[\d\s.,]+\s*(?:ОП|XP|ХР)\b)') { return }
+    if ($normalized.Length -gt 240) { $normalized = $normalized.Substring(0,240) }
+    return $normalized
+}
+
+function Write-RewardDiagnostic([string]$status, [string]$message) {
+    $path = "$OutputPath.diagnostic"
+    try {
+        $time = [DateTime]::UtcNow.ToString('o',[Globalization.CultureInfo]::InvariantCulture)
+        $content = "$time`n$status`n$message"
+        [IO.File]::WriteAllText("$path.tmp", $content, [Text.Encoding]::UTF8)
+        if ([IO.File]::Exists($path)) { [IO.File]::Replace("$path.tmp", $path, "$path.bak") }
+        else { [IO.File]::Move("$path.tmp", $path) }
+    } catch [IO.IOException] {
+        # Diagnostics must not interrupt the counter.
+    }
+}
+
 if ($TestImage) {
     $frame = [Drawing.Bitmap]::new($TestImage)
     try {
@@ -169,13 +189,14 @@ try {
     Write-Host 'Слежу за уведомлениями в активном окне Fortnite. Для выхода нажми Ctrl+C.'
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $lastSeen = -1000
+    $lastDiagnosticText = $null
     $game = $null
     while ($true) {
         if (!$game -or $game.HasExited) {
             if ($session) { Save-GameSession $session; $session = $null }
             if ($game) { $game.Dispose() }
             $game = Get-Process FortniteClient-Win64-Shipping -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($game) { $session = Open-GameSession $game; $lastSeen = -1000 }
+            if ($game) { $session = Open-GameSession $game; $lastSeen = -1000; $lastDiagnosticText = $null }
         }
         if ($session -and ($session.Clock.ElapsedMilliseconds - $session.LastSaved) -ge 5000) {
             Save-GameSession $session
@@ -201,20 +222,28 @@ try {
         $capture = [Drawing.Graphics]::FromImage($frame)
         try {
             $capture.CopyFromScreen($x, $y, 0, 0, $frame.Size)
-            $isChest = Has-ChestReward (Read-Reward $frame)
+            $reward = Read-Reward $frame
+            $isChest = Has-ChestReward $reward
         }
         finally {
             $capture.Dispose()
             $frame.Dispose()
         }
+        $diagnosticText = Get-RewardDiagnosticText $reward
         if ($isChest) {
             $now = $watch.ElapsedMilliseconds
             if (($now - $lastSeen) -gt 650) {
                 $total = Update-Count $true $session
                 Write-Host "Всего сундуков: $total"
+                Write-RewardDiagnostic 'counted' $diagnosticText
+            } elseif ($diagnosticText -and $diagnosticText -ne $lastDiagnosticText) {
+                Write-RewardDiagnostic 'duplicate' $diagnosticText
             }
             $lastSeen = $now
+        } elseif ($diagnosticText -and $diagnosticText -ne $lastDiagnosticText) {
+            Write-RewardDiagnostic 'no-chest' $diagnosticText
         }
+        $lastDiagnosticText = $diagnosticText
         Start-Sleep -Milliseconds 120
     }
 }
