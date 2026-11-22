@@ -8,7 +8,7 @@ on:
         default: '1.1.0'
   push:
     branches: [main]
-    paths: ['.github/workflows/release.yml']
+    paths: ['.github/workflows/release.yml', 'ReleaseUpdate.cs']
 permissions:
   contents: write
 jobs:
@@ -28,5 +28,5 @@ jobs:
           $version = $Matches[1]
           if ($env:REQUESTED_VERSION -and $env:REQUESTED_VERSION -ne $version) { throw 'Version mismatch' }
           ./Build.ps1
-          gh release create "v$version" ./dist/Chest-Island-Setup.exe --target $env:GITHUB_SHA --title "Chest Island $version" --notes "Windows installer for Chest Island. Includes mouse placement and experimental rare and spirit chest recognition from Russian HUD labels." --latest
+          gh release create "v$version" ./dist/Chest-Island-Setup.exe --target $env:GITHUB_SHA --title "Chest Island $version" --notes "Установщик Chest Island для Windows." --latest
           if ($LASTEXITCODE) { throw 'Release publication failed' }

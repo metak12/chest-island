@@ -10,7 +10,7 @@ internal sealed class ReleaseUpdate
 {
     private const string Repo = "metak12/chest-island";
     private const string Name = "Chest-Island-Setup.exe";
-    public const string VersionText = "1.1.0";
+    public const string VersionText = "1.1.1";
     private readonly Uri url;
     private readonly string digest;
     public readonly Version Version;
@@ -24,7 +24,12 @@ internal sealed class ReleaseUpdate
 
     private sealed class GitHubClient : WebClient
     {
-        public GitHubClient() { Headers[HttpRequestHeader.UserAgent] = "ChestIsland/" + VersionText; }
+        public GitHubClient()
+        {
+            // The standalone .NET Framework executable can otherwise select legacy TLS.
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+            Headers[HttpRequestHeader.UserAgent] = "ChestIsland/" + VersionText;
+        }
         protected override WebRequest GetWebRequest(Uri address)
         {
             var request = base.GetWebRequest(address);
