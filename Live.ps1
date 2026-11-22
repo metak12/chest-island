@@ -106,6 +106,12 @@ function Update-Count([bool]$increment) {
         if ($increment -and $value -lt [int]::MaxValue) {
             $value++
             Write-Count $value
+            try {
+                $day = [DateTime]::Now.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)
+                [IO.File]::AppendAllText("$OutputPath.history", $day + [Environment]::NewLine)
+            } catch [IO.IOException] {
+                Write-Warning "Не удалось сохранить событие в истории: $($_.Exception.Message)"
+            }
         } elseif (!$exists) {
             Write-Count $value
         }

@@ -65,6 +65,15 @@ function Get-OverlayPosition([Drawing.Rectangle]$screen, [Drawing.Size]$size) {
     [Drawing.Point]::new(($screen.Left + $x), ($screen.Top + $y))
 }
 
+function Format-OverlayCount([string]$value) {
+    $goalPath = Join-Path $env:APPDATA 'FortniteChestCounter/goal.txt'
+    $goal = 0
+    try { [void][int]::TryParse([IO.File]::ReadAllText($goalPath),[ref]$goal) }
+    catch [IO.IOException] {}
+    if ($goal -gt 0) { return "$value / $goal" }
+    return "Сундуки: $value"
+}
+
 if ($Move) {
     $editor = [Windows.Forms.Form]::new()
     try {
@@ -87,7 +96,7 @@ if ($Move) {
         $preview = [Windows.Forms.Label]::new()
         $preview.Bounds = [Drawing.Rectangle]::new(0,0,218,42)
         $preview.TextAlign = 'MiddleCenter'
-        $preview.Text = "⠿   Сундуки: $value"
+        $preview.Text = "⠿   " + (Format-OverlayCount $value)
         $preview.ForeColor = [Drawing.Color]::White
         $preview.Font = [Drawing.Font]::new('Segoe UI Semibold', 14)
         $preview.Cursor = [Windows.Forms.Cursors]::SizeAll
@@ -171,7 +180,7 @@ try {
 
         try {
             $value = [IO.File]::ReadAllText($totalPath).Trim()
-            if ($value -match '^\d+$') { $label.Text = "Сундуки: $value" }
+            if ($value -match '^\d+$') { $label.Text = Format-OverlayCount $value }
         }
         catch [IO.IOException] {
             # Keep showing the last count while the counter updates the file.

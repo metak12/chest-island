@@ -20,6 +20,7 @@ internal sealed class ChestIsland
     private readonly DispatcherTimer timer;
     private long? initial;
     private int? previous;
+    private int goal;
     private Process editor;
     private ReleaseUpdate update;
 
@@ -44,7 +45,10 @@ internal sealed class ChestIsland
                 icon.Handle, Int32Rect.Empty, System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
         Find<Button>("LiveToggle").Click += (s, e) => Toggle("Live.ps1", IsLive);
         Find<Button>("OverlayToggle").Click += (s, e) => Toggle("Overlay.ps1", IsOverlay);
-        Find<Button>("EditCount").Click += (s, e) => EditCount();
+        goal = ReadGoal();
+        Find<Button>("EditCount").Click += (s, e) => EditCount(false);
+        Find<Button>("EditGoal").Click += (s, e) => EditCount(true);
+        Find<Button>("History").Click += (s, e) => ShowHistory();
         Find<Button>("MoveOverlay").Click += (s, e) => Move();
         Find<Button>("UpdateButton").Click += async (s, e) => await UpdateClick();
         timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
@@ -92,9 +96,11 @@ internal sealed class ChestIsland
         Find<Button>("MoveOverlay").IsEnabled = editor == null || editor.HasExited;
 
         int value;
+        ShowGoal(previous.GetValueOrDefault());
         try { if (!int.TryParse(File.ReadAllText(Path.Combine(data, "live-total.txt")), out value)) return; }
         catch (IOException) { return; }
         if (!initial.HasValue) initial = value;
+        ShowGoal(value);
         if (previous == value) return;
         var count = Find<TextBlock>("Count");
         count.Text = value.ToString("N0", CultureInfo.GetCultureInfo("ru-RU"));
@@ -174,25 +180,26 @@ internal sealed class ChestIsland
         finally { button.IsEnabled = true; }
     }
 
-    private void EditCount()
+    private void EditCount(bool editingGoal)
     {
         var dialog = new Window
         {
-            Title = "Изменить счёт", Owner = window, Width = 360, SizeToContent = SizeToContent.Height,
+            Title = editingGoal ? "Личная цель" : "Изменить счёт", Owner = window, Width = 360, SizeToContent = SizeToContent.Height,
             ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = window.Background, Foreground = window.Foreground, ShowInTaskbar = false
         };
         var panel = new StackPanel { Margin = new Thickness(20) };
         panel.Resources = window.Resources;
-        panel.Children.Add(new TextBlock { Text = "Сколько сундуков уже открыто?", FontSize = 17 });
+        panel.Children.Add(new TextBlock { Text = editingGoal ? "Сколько сундуков в цели?" : "Сколько сундуков уже открыто?", FontSize = 17 });
         var entry = new TextBox
         {
-            Text = previous.GetValueOrDefault(0).ToString(CultureInfo.InvariantCulture),
+            Text = (editingGoal ? goal : previous.GetValueOrDefault()).ToString(CultureInfo.InvariantCulture),
             MaxLength = 10, FontSize = 22, Margin = new Thickness(0, 12, 0, 0),
             Padding = new Thickness(8), Background = new SolidColorBrush(Color.FromRgb(39, 34, 52)),
             Foreground = window.Foreground
         };
         panel.Children.Add(entry);
+        if (editingGoal) panel.Children.Add(new TextBlock { Text = "0 скрывает цель.", Margin = new Thickness(0, 6, 0, 0), Foreground = Brushes.LightGray });
         var error = new TextBlock { Foreground = Brushes.LightPink, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) };
         panel.Children.Add(error);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 9, 0, 0) };
@@ -214,14 +221,114 @@ internal sealed class ChestIsland
             }
             try
             {
-                int before = SaveCount(value);
-                if (initial.HasValue) initial += value - before;
+                if (editingGoal)
+                {
+                    SaveGoal(value);
+                    goal = value;
+                }
+                else
+                {
+                    int before = SaveCount(value);
+                    if (initial.HasValue) initial += value - before;
+                }
                 dialog.DialogResult = true;
                 Refresh();
-                Say("Счёт сохранён.");
+                Say(editingGoal ? "Цель сохранена." : "Счёт сохранён.");
             }
             catch (Exception ex) { error.Text = ex.Message; }
         };
+        dialog.ShowDialog();
+    }
+
+    private int ReadGoal()
+    {
+        try
+        {
+            int value;
+            return int.TryParse(File.ReadAllText(Path.Combine(data, "goal.txt")), out value) && value > 0 ? value : 0;
+        }
+        catch (IOException) { return 0; }
+    }
+
+    private void SaveGoal(int value)
+    {
+        Directory.CreateDirectory(data);
+        string path = Path.Combine(data, "goal.txt");
+        string temp = path + ".new";
+        File.WriteAllText(temp, value.ToString(CultureInfo.InvariantCulture));
+        if (File.Exists(path)) File.Replace(temp, path, null);
+        else File.Move(temp, path);
+    }
+
+    private void ShowGoal(int total)
+    {
+        var label = Find<TextBlock>("GoalLabel");
+        var bar = Find<ProgressBar>("GoalProgress");
+        if (goal <= 0)
+        {
+            label.Text = "Цель не задана";
+            bar.Visibility = Visibility.Collapsed;
+            return;
+        }
+        var culture = CultureInfo.GetCultureInfo("ru-RU");
+        label.Text = string.Format(culture, total >= goal ? "Цель достигнута  ·  {0:N0} / {1:N0}" : "Цель  ·  {0:N0} / {1:N0}", total, goal);
+        bar.Value = Math.Max(0, Math.Min(1, (double)total / goal));
+        bar.Visibility = Visibility.Visible;
+    }
+
+    private void ShowHistory()
+    {
+        var days = new System.Collections.Generic.SortedDictionary<DateTime, long>();
+        try
+        {
+            using (var stream = new FileStream(Path.Combine(data, "live-total.txt.history"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            using (var reader = new StreamReader(stream))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    DateTime day;
+                    if (!DateTime.TryParseExact(line, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out day)) continue;
+                    long count;
+                    days.TryGetValue(day, out count);
+                    days[day] = count + 1;
+                }
+            }
+        }
+        catch (FileNotFoundException) { }
+        catch (DirectoryNotFoundException) { }
+        catch (IOException ex) { Say("Не удалось открыть историю. " + ex.Message); return; }
+
+        var dialog = new Window
+        {
+            Title = "История сундуков", Owner = window, Width = 430, Height = 480,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = window.Background, Foreground = window.Foreground, ShowInTaskbar = false
+        };
+        var panel = new DockPanel { Margin = new Thickness(20), Resources = window.Resources };
+        var summary = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+        DockPanel.SetDock(summary, Dock.Top);
+        summary.Children.Add(new TextBlock { Text = "История по дням", FontSize = 24, FontWeight = FontWeights.SemiBold });
+        long today;
+        days.TryGetValue(DateTime.Today, out today);
+        summary.Children.Add(new TextBlock { Text = "Сегодня: " + today, Margin = new Thickness(0, 5, 0, 0) });
+        summary.Children.Add(new TextBlock
+        {
+            Text = "Здесь только автоматические срабатывания с версии 1.1.4.",
+            TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightGray, Margin = new Thickness(0, 5, 0, 0)
+        });
+        panel.Children.Add(summary);
+        var close = new Button { Content = "Закрыть", IsCancel = true, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0) };
+        DockPanel.SetDock(close, Dock.Bottom);
+        panel.Children.Add(close);
+        var list = new ListBox { Background = new SolidColorBrush(Color.FromRgb(33, 29, 45)), Foreground = window.Foreground, BorderThickness = new Thickness(0) };
+        var rows = new System.Collections.Generic.List<DateTime>(days.Keys);
+        rows.Reverse();
+        foreach (var day in rows)
+            list.Items.Add(string.Format(CultureInfo.GetCultureInfo("ru-RU"), "{0:d MMMM yyyy}    ·    {1:N0}", day, days[day]));
+        if (rows.Count == 0) list.Items.Add("Пока нет записей.");
+        panel.Children.Add(list);
+        dialog.Content = panel;
         dialog.ShowDialog();
     }
 
