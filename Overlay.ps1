@@ -156,11 +156,13 @@ if ($Move) {
         if ([IO.File]::Exists($data)) { $value = [IO.File]::ReadAllText($data).Trim() }
 
         $preview = [Windows.Forms.Label]::new()
+        $preview.UseCompatibleTextRendering = $false
         $preview.Bounds = [Drawing.Rectangle]::new(0,0,$settings.Width,$settings.Height)
         $preview.TextAlign = 'MiddleCenter'
         $preview.Text = "⠿   " + (Format-OverlayCount $value $settings.Mode)
         $preview.ForeColor = [Drawing.Color]::White
-        $preview.Font = [Drawing.Font]::new('Segoe UI Semibold', [single]$settings.Font)
+        $previewFont = [Drawing.Font]::new('Segoe UI Semibold', [single]$settings.Font)
+        $preview.Font = $previewFont
         $preview.Cursor = [Windows.Forms.Cursors]::SizeAll
         $editor.Controls.Add($preview)
 
@@ -196,7 +198,10 @@ if ($Move) {
         })
         $done.Add_Click($save)
         [Windows.Forms.Application]::Run($editor)
-    } finally { $editor.Dispose() }
+    } finally {
+        $editor.Dispose()
+        if ($previewFont) { $previewFont.Dispose() }
+    }
     exit
 }
 
@@ -210,7 +215,7 @@ if (!$created) {
 
 $form = [ChestOverlay]::new()
 $timer = [Windows.Forms.Timer]::new()
-$display.Font = [Drawing.Font]::new('Segoe UI Semibold', 15)
+$fonts = @(12,15,19 | ForEach-Object { [Drawing.Font]::new('Segoe UI Semibold',[single]$_) })
 try {
     $form.Text = 'Сундуки Fortnite'
     $form.TopMost = $true
@@ -222,9 +227,10 @@ try {
     $form.Opacity = 0.89
 
     $label = [Windows.Forms.Label]::new()
+    $label.UseCompatibleTextRendering = $false
     $label.Dock = 'Fill'
     $label.TextAlign = 'MiddleCenter'
-    $label.Font = $display.Font
+    $label.Font = $fonts[1]
     $label.ForeColor = [Drawing.Color]::White
     $label.Text = 'Сундуки: —'
     $form.Controls.Add($label)
@@ -245,10 +251,7 @@ try {
         $settings = Get-OverlaySettings $profile
         if ($display.AppliedSize -ne $settings.Size) {
             $form.ClientSize = [Drawing.Size]::new($settings.Width, $settings.Height)
-            $oldFont = $display.Font
-            $display.Font = [Drawing.Font]::new('Segoe UI Semibold', [single]$settings.Font)
-            $label.Font = $display.Font
-            $oldFont.Dispose()
+            $label.Font = $fonts[$settings.Size]
             $display.AppliedSize = $settings.Size
         }
         $form.Opacity = $settings.Opacity / 100
@@ -272,7 +275,7 @@ try {
 finally {
     $timer.Dispose()
     $form.Dispose()
-    $display.Font.Dispose()
+    foreach ($font in $fonts) { $font.Dispose() }
     $instance.ReleaseMutex()
     $instance.Dispose()
 }

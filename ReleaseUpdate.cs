@@ -10,7 +10,7 @@ internal sealed class ReleaseUpdate
 {
     private const string Repo = "metak12/chest-island";
     private const string Name = "Chest-Island-Setup.exe";
-    public const string VersionText = "1.1.10";
+    public const string VersionText = "1.1.11";
     private readonly Uri url;
     private readonly string digest;
     public readonly Version Version;
