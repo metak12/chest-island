@@ -1,6 +1,7 @@
 ﻿param([switch]$Move)
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'WorkerStatus.ps1')
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing -TypeDefinition @"
@@ -61,16 +62,25 @@ function Get-OverlayPath([string]$name, [int]$profile) {
     return (Join-Path $overlayData ($name + '.txt'))
 }
 
-function Get-OverlayPosition([Drawing.Rectangle]$screen, [Drawing.Size]$size, [string]$positionPath) {
+function Get-MonitorPositionPath([int]$profile, [string]$deviceName) {
+    $device = $deviceName -replace '[^A-Za-z0-9]',''
+    if (!$device) { return (Get-OverlayPath 'overlay-position' $profile) }
+    return (Get-OverlayPath ("overlay-position-" + $device.ToLowerInvariant()) $profile)
+}
+
+function Get-OverlayPosition([Windows.Forms.Screen]$monitor, [Drawing.Size]$size, [int]$profile) {
+    $screen = $monitor.Bounds
     $x = [int]($screen.Width * 0.57)
     $y = 65
-    try {
-        if ([IO.File]::ReadAllText($positionPath) -match '^(\d+),(\d+)$') {
-            $x = [int]$Matches[1]
-            $y = [int]$Matches[2]
-        }
-    } catch [IO.IOException] {
-        # Use the default position until one has been saved.
+    $candidates = @((Get-MonitorPositionPath $profile $monitor.DeviceName), (Get-OverlayPath 'overlay-position' $profile))
+    foreach ($positionPath in $candidates) {
+        try {
+            if ([IO.File]::ReadAllText($positionPath).Trim() -match '^(\d+),(\d+)$') {
+                $x = [int]$Matches[1]
+                $y = [int]$Matches[2]
+                break
+            }
+        } catch [IO.IOException] {}
     }
     $x = [Math]::Max(0, [Math]::Min($x, $screen.Width - $size.Width))
     $y = [Math]::Max(0, [Math]::Min($y, $screen.Height - $size.Height))
@@ -142,7 +152,6 @@ if ($Move) {
         $editor.StartPosition = 'Manual'
         $editor.FormBorderStyle = 'None'
         $profile = Get-OverlayProfile
-        $positionPath = Get-OverlayPath 'overlay-position' $profile
         $settings = Get-OverlaySettings $profile
         $editor.ClientSize = [Drawing.Size]::new($settings.Width, ($settings.Height + 30))
         $editor.BackColor = [Drawing.Color]::FromArgb(31, 25, 47)
@@ -150,7 +159,7 @@ if ($Move) {
             Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
         $target = [Windows.Forms.Screen]::FromPoint([Windows.Forms.Cursor]::Position)
         if ($game) { $target = [Windows.Forms.Screen]::FromHandle($game.MainWindowHandle) }
-        $editor.Location = Get-OverlayPosition $target.Bounds ([Drawing.Size]::new($settings.Width,$settings.Height)) $positionPath
+        $editor.Location = Get-OverlayPosition $target ([Drawing.Size]::new($settings.Width,$settings.Height)) $profile
         $data = Join-Path $env:APPDATA 'FortniteChestCounter/live-total.txt'
         $value = '0'
         if ([IO.File]::Exists($data)) { $value = [IO.File]::ReadAllText($data).Trim() }
@@ -183,7 +192,9 @@ if ($Move) {
         $editor.CancelButton = $cancel
 
         $save = {
-            $bounds = [Windows.Forms.Screen]::FromControl($editor).Bounds
+            $monitor = [Windows.Forms.Screen]::FromControl($editor)
+            $bounds = $monitor.Bounds
+            $positionPath = Get-MonitorPositionPath $profile $monitor.DeviceName
             $x = [Math]::Max(0, $editor.Left - $bounds.Left)
             $y = [Math]::Max(0, $editor.Top - $bounds.Top)
             [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($positionPath))
@@ -213,6 +224,7 @@ if (!$created) {
     exit
 }
 
+$workerStatus = New-WorkerStatus (Join-Path $overlayData 'overlay.worker') $PSCommandPath
 $form = [ChestOverlay]::new()
 $timer = [Windows.Forms.Timer]::new()
 $fonts = @(12,15,19 | ForEach-Object { [Drawing.Font]::new('Segoe UI Semibold',[single]$_) })
@@ -244,10 +256,10 @@ try {
         $game = Get-Process FortniteClient-Win64-Shipping -ErrorAction SilentlyContinue |
             Where-Object { $_.Id -eq $ownerId } |
             Select-Object -First 1
-        if (!$game) { $form.Hide(); return }
+        if (!$game) { Write-WorkerStatus $workerStatus 'waiting'; $form.Hide(); return }
+        Write-WorkerStatus $workerStatus 'visible'
 
         $profile = Get-OverlayProfile
-        $positionPath = Get-OverlayPath 'overlay-position' $profile
         $settings = Get-OverlaySettings $profile
         if ($display.AppliedSize -ne $settings.Size) {
             $form.ClientSize = [Drawing.Size]::new($settings.Width, $settings.Height)
@@ -263,8 +275,8 @@ try {
         catch [IO.IOException] {
             # Keep showing the last count while the counter updates the file.
         }
-        $screen = [Windows.Forms.Screen]::FromHandle($foreground).Bounds
-        $form.Location = Get-OverlayPosition $screen $form.Size $positionPath
+        $monitor = [Windows.Forms.Screen]::FromHandle($foreground)
+        $form.Location = Get-OverlayPosition $monitor $form.Size $profile
         if (!$form.Visible) { $form.Show() }
         $form.KeepAboveGame()
     })
@@ -273,6 +285,7 @@ try {
     [Windows.Forms.Application]::Run()
 }
 finally {
+    Clear-WorkerStatus $workerStatus
     $timer.Dispose()
     $form.Dispose()
     foreach ($font in $fonts) { $font.Dispose() }

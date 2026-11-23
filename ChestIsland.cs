@@ -121,9 +121,9 @@ internal sealed partial class ChestIsland
         Find<TextBlock>("Game").Text = game.Length > 0 ? "●  Fortnite открыт" : "○  Fortnite закрыт";
         foreach (var process in game) process.Dispose();
         SyncAuto(game.Length > 0, live, overlay);
-        Find<TextBlock>("LiveStatus").Text = live ? (IsSpectatorPaused() ? "Пауза · наблюдение" : "Включено") : "Остановлено";
+        ShowWorkerStatus(live, false);
         Find<Button>("SwitchOverlayProfile").ToolTip = "Активен профиль " + ReadOverlayProfile() + ". Нажми, чтобы переключить.";
-        Find<TextBlock>("OverlayStatus").Text = overlay ? "Включён · виден в Fortnite" : "Скрыт";
+        ShowWorkerStatus(overlay, true);
         Find<Button>("LiveToggle").Content = live ? "Остановить" : "Запустить";
         Find<Button>("OverlayToggle").Content = overlay ? "Скрыть" : "Показать";
         Find<Button>("MoveOverlay").IsEnabled = editor == null || editor.HasExited;

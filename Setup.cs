@@ -8,7 +8,7 @@ using System.Windows.Forms;
 internal static class Setup
 {
     private const string AppName = "Chest Island";
-    private static readonly string[] Files = { "Chest Island.exe", "ChestIsland.xaml", "Live.ps1", "Overlay.ps1", "Calibration.ps1" };
+    private static readonly string[] Files = { "Chest Island.exe", "ChestIsland.xaml", "Live.ps1", "Overlay.ps1", "Calibration.ps1", "WorkerStatus.ps1", "Version.txt" };
 
     [STAThread]
     private static int Main(string[] args)

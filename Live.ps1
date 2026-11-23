@@ -1,6 +1,7 @@
 ﻿param([string]$TestImage, [string]$OutputPath)
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'WorkerStatus.ps1')
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 Add-Type @"
@@ -12,6 +13,7 @@ public static class FortniteWindow {
 
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
 }
@@ -113,6 +115,51 @@ function Set-SpectatorMarker([string]$path, [bool]$active) {
 
 function Has-ChestReward($result) {
     return ($result.Text -match '\bСУНДУК\b')
+}
+
+function New-ToastState {
+    return @{ Visible = $false; Blank = 0; Key = ''; PendingKey = ''; PendingFrames = 0 }
+}
+
+function Test-NewChestToast([hashtable]$state, [bool]$hasChest, [string]$text) {
+    if (!$hasChest) {
+        $state.Blank++
+        $state.PendingKey = ''
+        $state.PendingFrames = 0
+        if ($state.Blank -ge 2) {
+            $state.Visible = $false
+            $state.Key = ''
+            $state.Blank = 2
+        }
+        return $false
+    }
+    $state.Blank = 0
+    $key = ''
+    if ($text -match '(?i)\+\s*(\d[\d .\u00a0]*?)\s*(?:ОП|XP|ХР)\b') {
+        $key = $Matches[1] -replace '\D',''
+    }
+    if (!$state.Visible) {
+        $state.Visible = $true
+        $state.Key = $key
+        return $true
+    }
+    if (!$key -or $key -eq $state.Key) {
+        $state.PendingKey = ''
+        $state.PendingFrames = 0
+        return $false
+    }
+    if (!$state.Key) { $state.Key = $key; return $false }
+    if ($state.PendingKey -ne $key) {
+        $state.PendingKey = $key
+        $state.PendingFrames = 1
+        return $false
+    }
+    $state.PendingFrames++
+    if ($state.PendingFrames -lt 2) { return $false }
+    $state.Key = $key
+    $state.PendingKey = ''
+    $state.PendingFrames = 0
+    return $true
 }
 
 function Get-RewardDiagnosticText($result) {
@@ -236,6 +283,7 @@ function Update-Count([bool]$increment, [hashtable]$session) {
 
 $session = $null
 $spectatorFile = "$OutputPath.spectator"
+$workerStatus = New-WorkerStatus "$OutputPath.worker" $PSCommandPath
 Set-SpectatorMarker $spectatorFile $false
 try {
     $total = Update-Count $false
@@ -243,7 +291,7 @@ try {
     Write-Host "Файл для OBS: $OutputPath"
     Write-Host 'Слежу за уведомлениями в активном окне Fortnite. Для выхода нажми Ctrl+C.'
     $watch = [Diagnostics.Stopwatch]::StartNew()
-    $lastSeen = -1000
+    $toast = New-ToastState
     $lastDiagnosticText = $null
     $spectating = $false
     $clearSamples = 0
@@ -260,7 +308,7 @@ try {
                 Set-SpectatorMarker $spectatorFile $false
             }
             $game = Get-Process FortniteClient-Win64-Shipping -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($game) { $session = Open-GameSession $game; $lastSeen = -1000; $lastDiagnosticText = $null }
+            if ($game) { $session = Open-GameSession $game; $toast = New-ToastState; $lastDiagnosticText = $null }
         }
         if ($session -and ($session.Clock.ElapsedMilliseconds - $session.LastSaved) -ge 5000) {
             Save-GameSession $session
@@ -269,15 +317,29 @@ try {
         [uint32]$owner = 0
         [void][FortniteWindow]::GetWindowThreadProcessId($window, [ref]$owner)
         if (!$game -or $owner -ne $game.Id) {
+            $status = 'game-closed'
+            if ($game) {
+                $status = 'background'
+                if ($game.MainWindowHandle -ne [IntPtr]::Zero -and [FortniteWindow]::IsIconic($game.MainWindowHandle)) {
+                    $status = 'minimized'
+                }
+            }
+            Write-WorkerStatus $workerStatus $status
             Start-Sleep -Milliseconds 250
             continue
         }
         $rect = [FortniteWindow+Rect]::new()
         if (![FortniteWindow]::GetWindowRect($window, [ref]$rect)) {
+            Write-WorkerStatus $workerStatus 'capture-error'
             Start-Sleep -Milliseconds 250
             continue
         }
-        $reward = Read-HudArea $rect (Get-RewardArea "$OutputPath.region")
+        try { $reward = Read-HudArea $rect (Get-RewardArea "$OutputPath.region") }
+        catch [Runtime.InteropServices.ExternalException] {
+            Write-WorkerStatus $workerStatus 'capture-error'
+            Start-Sleep -Milliseconds 250
+            continue
+        }
         $isChest = Has-ChestReward $reward
         $now = $watch.ElapsedMilliseconds
         if (($now - $lastSpectatorCheck) -ge 1200 -or ($isChest -and ($now - $lastSpectatorCheck) -ge 350)) {
@@ -299,20 +361,24 @@ try {
             } catch [Runtime.InteropServices.ExternalException] {}
         }
         $diagnosticText = Get-RewardDiagnosticText $reward
+        $newToast = Test-NewChestToast $toast $isChest $reward.Text
+        $status = 'waiting'
+        if ($spectating) { $status = 'spectating' }
+        elseif ($isChest) { $status = 'chest' }
+        elseif ($diagnosticText) { $status = 'other-toast' }
+        Write-WorkerStatus $workerStatus $status
         if ($isChest) {
-            $now = $watch.ElapsedMilliseconds
             if ($spectating) {
                 if ($diagnosticText -and $diagnosticText -ne $lastDiagnosticText) {
                     Write-RewardDiagnostic 'spectating' $diagnosticText
                 }
-            } elseif (($now - $lastSeen) -gt 650) {
+            } elseif ($newToast) {
                 $total = Update-Count $true $session
                 Write-Host "Всего сундуков: $total"
                 Write-RewardDiagnostic 'counted' $diagnosticText
             } elseif ($diagnosticText -and $diagnosticText -ne $lastDiagnosticText) {
                 Write-RewardDiagnostic 'duplicate' $diagnosticText
             }
-            $lastSeen = $now
         } elseif ($diagnosticText -and $diagnosticText -ne $lastDiagnosticText) {
             Write-RewardDiagnostic 'no-chest' $diagnosticText
         }
@@ -320,5 +386,5 @@ try {
         Start-Sleep -Milliseconds 120
     }
 }
-finally { Set-SpectatorMarker $spectatorFile $false; Save-GameSession $session; $writeLock.Dispose(); $lock.Dispose() }
+finally { Clear-WorkerStatus $workerStatus; Set-SpectatorMarker $spectatorFile $false; Save-GameSession $session; $writeLock.Dispose(); $lock.Dispose() }
 

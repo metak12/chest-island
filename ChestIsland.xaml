@@ -198,7 +198,7 @@
        <TextBlock Text="&#xE721;" Style="{StaticResource SidebarIcon}" Foreground="#C5ACEF"/>
        <TextBlock Text="Распознавание" FontSize="15" FontWeight="SemiBold"/>
       </StackPanel>
-      <TextBlock x:Name="LiveStatus" Foreground="{StaticResource Muted}" Margin="0,5,0,10" FontSize="12"/>
+      <TextBlock x:Name="LiveStatus" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,5,0,10" FontSize="12"/>
       <Button x:Name="LiveToggle" HorizontalAlignment="Left" Background="#D0BCF6" BorderBrush="#D0BCF6" Foreground="#231B31"/>
      </StackPanel>
     </Border>
@@ -208,7 +208,7 @@
        <TextBlock Text="&#xE7F4;" Style="{StaticResource SidebarIcon}" Foreground="#C5ACEF"/>
        <TextBlock Text="Оверлей" FontSize="15" FontWeight="SemiBold"/>
       </StackPanel>
-      <TextBlock x:Name="OverlayStatus" Foreground="{StaticResource Muted}" Margin="0,5,0,10" FontSize="12"/>
+      <TextBlock x:Name="OverlayStatus" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,5,0,10" FontSize="12"/>
       <StackPanel Orientation="Horizontal">
        <Button x:Name="OverlayToggle" Margin="0,0,6,0"/>
        <Button x:Name="MoveOverlay" Content="Переместить" Margin="0,0,6,0"/>

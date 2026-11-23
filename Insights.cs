@@ -67,7 +67,7 @@ internal sealed partial class ChestIsland
             {
                 case "counted": status.Text = "Засчитано: найдено слово «СУНДУК»."; break;
                 case "spectating": status.Text = "Пропущено: открыт режим наблюдения."; break;
-                case "duplicate": status.Text = "Пропущено: повторное уведомление за короткий интервал."; break;
+                case "duplicate": status.Text = "Пропущено: то же уведомление ещё на экране."; break;
                 default: status.Text = "Пропущено: в прочитанном тексте нет слова «СУНДУК»."; break;
             }
             DateTimeOffset time;
